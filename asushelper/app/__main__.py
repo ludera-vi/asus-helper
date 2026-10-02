@@ -37,14 +37,14 @@ PROFILE_NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance
 GPU_NAMES = {"off": "выключена (Eco)", "suspended": "спит", "active": "работает", "missing": "без драйвера"}
 
 
-# Цвет значка — режим видеокарты: Eco зелёный, Стандарт синий; «Авто» — оранжевая рамка,
-# внутри серый (NVIDIA отключена, батарея) или тусклый зелёный (NVIDIA включена, зарядка). Цвета Breeze.
-GPU_COLORS = {"eco": "#27ae60", "standard": "#3daee9", "auto": "#f67400"}
-AUTO_OFF, AUTO_ON = "#7f8c8d", "#2e7d4f"
+# Значок: рамка — режим видеокарты, заливка — режим производительности (цвета Breeze)
+GPU_BORDER = {"eco": "#95a5a6", "standard": "#3daee9", "auto": "#f67400"}
+PROFILE_FILL = {"quiet": "#2e7d4f", "balanced": "#2a6f97", "performance": "#a93226"}
+DEFAULT_FILL = "#4d5358"
 
 
-def make_icon(color: str, dim: bool = False, border: str | None = None) -> QIcon:
-    """Скруглённый квадрат с буквами AH. border — цветная рамка (режим «Авто»), dim — идёт переключение."""
+def make_icon(fill: str, border: str, dim: bool = False) -> QIcon:
+    """Скруглённый квадрат с буквами AH: рамка border, внутри fill. dim — идёт переключение видеокарты."""
     icon = QIcon()
     for size in (16, 22, 24, 32, 48, 64, 128):
         pm = QPixmap(size, size)
@@ -56,21 +56,14 @@ def make_icon(color: str, dim: bool = False, border: str | None = None) -> QIcon
         m = size * 0.04
         rect = QRectF(m, m, size - 2 * m, size - 2 * m)
         p.setPen(Qt.PenStyle.NoPen)
-        if border:
-            # рамка: внешний квадрат цвета рамки, внутри — квадрат цвета состояния
-            p.setBrush(QColor(border))
-            p.drawRoundedRect(rect, size * 0.22, size * 0.22)
-            w = max(1.5, size * 0.085)
-            inner = rect.adjusted(w, w, -w, -w)
-            p.setBrush(QColor(color))
-            p.drawRoundedRect(inner, size * 0.15, size * 0.15)
-        else:
-            p.setBrush(QColor(color))
-            p.drawRoundedRect(rect, size * 0.22, size * 0.22)
+        p.setBrush(QColor(border))
+        p.drawRoundedRect(rect, size * 0.22, size * 0.22)
+        w = max(2.0, size * 0.1)
+        p.setBrush(QColor(fill))
+        p.drawRoundedRect(rect.adjusted(w, w, -w, -w), size * 0.14, size * 0.14)
         font = QFont()
         font.setBold(True)
-        # в рамке места меньше — шрифт по внутреннему квадрату, но не мельче читаемого в трее
-        font.setPixelSize(max(7, round(size * (0.47 if border else 0.5))))
+        font.setPixelSize(max(7, round(size * 0.47)))
         font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 92)
         p.setFont(font)
         p.setPen(QColor("white"))
@@ -144,16 +137,11 @@ class Tray:
         g = s.get("gpu") or {}
         switching = bool(g.get("switching"))
         off = (g.get("target") == "eco") if switching else g.get("state") == "off"
-        if g.get("auto_eco"):
-            key = ("auto", off, switching)
-            icon = lambda: make_icon(AUTO_OFF if off else AUTO_ON, dim=switching, border=GPU_COLORS["auto"])
-        else:
-            mode = "eco" if off else "standard"
-            key = (mode, switching)
-            icon = lambda: make_icon(GPU_COLORS[mode], dim=switching)
+        gpu_mode = "auto" if g.get("auto_eco") else ("eco" if off else "standard")
+        key = (gpu_mode, profile, switching)
         if key != getattr(self, "_icon_key", None):
             self._icon_key = key
-            self.icon.setIcon(icon())
+            self.icon.setIcon(make_icon(PROFILE_FILL.get(profile, DEFAULT_FILL), GPU_BORDER[gpu_mode], switching))
         for p, a in self.mode_actions.items():
             a.setChecked(p == profile)
         g = s.get("gpu") or {}
@@ -189,7 +177,7 @@ def main() -> int:
     app.setApplicationDisplayName("Asus-helper")
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("asus-helper")
-    app.setWindowIcon(QIcon.fromTheme("asus-helper", make_icon(GPU_COLORS["standard"])))
+    app.setWindowIcon(QIcon.fromTheme("asus-helper", make_icon(PROFILE_FILL["balanced"], GPU_BORDER["standard"])))
     app.setQuitOnLastWindowClosed(False)
 
     system = Gio.bus_get_sync(Gio.BusType.SYSTEM)

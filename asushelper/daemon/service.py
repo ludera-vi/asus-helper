@@ -171,6 +171,8 @@ class Service:
             "error": self.gpu.last_error,
             "can_force": self.gpu.can_force and self.gpu.last_error is not None,
             "external": gpu.external_displays() if supported and not gpu.bios_off() else [],
+            "dgpu_name": "NVIDIA",
+            "igpu_name": gpu.igpu_name(),
         }
         return self._gpu_cache
 

@@ -85,7 +85,8 @@ ColumnLayout {
              : page.gpu.state === "off" ? "Eco" : "Стандарт"
         iconName: Qt.resolvedUrl("icons/gpu-symbolic.svg")
         info: (page.gpu.auto_eco && !page.gpu.switching
-               ? (page.gpu.state === "off" ? "видеокарта отключена (батарея)" : "видеокарта включена (зарядка)")
+               ? (page.gpu.state === "off" ? "без сети — " + (page.gpu.dgpu_name || "NVIDIA") + " отключена"
+                                           : "от сети — " + (page.gpu.dgpu_name || "NVIDIA") + " включена")
                : Theme.gpuInfo(page.gpu, page.nv))
               + (page.fans.gpu == null ? "" : page.fans.gpu === 0 ? "  ·  вентилятор стоит" : "  ·  " + page.fans.gpu + " об/мин")
         infoColor: page.gpu.state === "active" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
@@ -114,7 +115,10 @@ ColumnLayout {
             }
             Tile {
                 text: "Авто"
-                subtitle: "от сети вкл. · без сети выкл."
+                // что работает прямо сейчас
+                subtitle: page.gpu.switching ? "переключается…"
+                        : page.gpu.state === "off" ? "работает " + (page.gpu.igpu_name || "встроенная")
+                        : "включена " + (page.gpu.dgpu_name || "NVIDIA")
                 iconName: "automated-tasks-symbolic"
                 accent: Theme.neutral
                 selected: !!page.gpu.auto_eco

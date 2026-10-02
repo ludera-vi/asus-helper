@@ -74,6 +74,20 @@ def mux_hybrid() -> bool:
     return sysfs.read(_attr("gpu_mux_mode"), "1") != "0"
 
 
+VENDORS = {"0x10de": "NVIDIA", "0x1002": "AMD", "0x8086": "Intel"}
+
+
+def igpu_name() -> str:
+    """Встроенная видеокарта (та, что ведёт экран при загрузке): Intel или AMD."""
+    for d in sysfs.find(PCI + "/*"):
+        if (sysfs.read(d + "/class") or "").startswith("0x03") and sysfs.read(d + "/boot_vga") == "1":
+            return VENDORS.get(sysfs.read(d + "/vendor") or "", "встроенная")
+    for d in sysfs.find(PCI + "/*"):
+        if (sysfs.read(d + "/class") or "").startswith("0x03") and sysfs.read(d + "/vendor") != "0x10de":
+            return VENDORS.get(sysfs.read(d + "/vendor") or "", "встроенная")
+    return "встроенная"
+
+
 def find_gpu() -> str | None:
     """PCI-адрес NVIDIA (например 0000:01:00.0) или None."""
     for d in sysfs.find(PCI + "/*"):
