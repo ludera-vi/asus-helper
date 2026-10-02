@@ -10,6 +10,7 @@ ColumnLayout {
     id: page
 
     signal openFans()
+    signal openMonitor()
 
     readonly property var st: backend.state || {}
     readonly property var gpu: st.gpu || {}
@@ -106,12 +107,15 @@ ColumnLayout {
             }
             Tile {
                 text: "Оптимальный"
-                subtitle: "Eco на батарее"
+                subtitle: "сам по зарядке"
                 iconName: "automated-tasks-symbolic"
                 accent: Theme.neutral
                 selected: !!page.gpu.auto_eco
                 enabled: !page.gpu.switching && !!page.gpu.mux_hybrid
                 onClicked: backend.setGpuAutoEco(true)
+                QQC2.ToolTip.visible: hovered
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                QQC2.ToolTip.text: "Отключил зарядку — NVIDIA выключается (Eco), батарея живёт дольше.\nПодключил — NVIDIA включается для игр и тяжёлых программ."
             }
         }
 
@@ -312,6 +316,13 @@ ColumnLayout {
                 horizontalAlignment: Text.AlignRight
                 font.weight: Font.DemiBold
             }
+        }
+
+        QQC2.Button {
+            Layout.fillWidth: true
+            icon.name: "office-chart-line-forecast-symbolic"
+            text: "Графики: температура, вентиляторы, расход и заряд батареи"
+            onClicked: page.openMonitor()
         }
     }
 

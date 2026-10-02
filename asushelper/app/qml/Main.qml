@@ -98,9 +98,9 @@ Window {
                 Item { Layout.fillWidth: true }
                 QQC2.ToolButton {
                     icon.name: "office-chart-line-forecast-symbolic"
-                    text: "Датчики и батарея"
-                    display: QQC2.AbstractButton.IconOnly
-                    enabled: stack.depth === 1
+                    text: "Графики"
+                    display: QQC2.AbstractButton.TextBesideIcon
+                    visible: stack.depth === 1
                     onClicked: win.openMonitor()
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -160,7 +160,7 @@ Window {
         }
     }
 
-    Component { id: mainPage; MainPage { onOpenFans: win.openFans() } }
+    Component { id: mainPage; MainPage { onOpenFans: win.openFans(); onOpenMonitor: win.openMonitor() } }
     Component { id: fansPage; FansPage { onBack: stack.pop() } }
     Component { id: monitorPage; MonitorPage { onBack: stack.pop() } }
 
