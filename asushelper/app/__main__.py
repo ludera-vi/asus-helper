@@ -37,18 +37,16 @@ PROFILE_NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance
 GPU_NAMES = {"off": "выключена (Eco)", "suspended": "спит", "active": "работает", "missing": "без драйвера"}
 
 
-# Значок: рамка — режим видеокарты (Eco серая, Стандарт синяя, Авто оранжевая),
-# заливка — режим производительности (Тихий зелёный, Баланс синий, Турбо красный — тёмные, чтобы
-# не сливаться с рамкой), между ними тёмный зазор. Цвета Breeze.
-GPU_BORDER = {"eco": "#95a5a6", "standard": "#3daee9", "auto": "#f67400"}
-PROFILE_FILL = {"quiet": "#24603d", "balanced": "#1f4f6d", "performance": "#7f261d"}
-DEFAULT_FILL = "#3a3f44"
-GAP = "#1b1e20"
+# Значок: цвет — режим (Тихий зелёный, Баланс синий, Турбо красный), фиолетовая полоска снизу —
+# NVIDIA включена (нет полоски — выключена). «Авто» — настройка, а не состояние: видно в подсказке и окне.
+PROFILE_FILL = {"quiet": "#27ae60", "balanced": "#3daee9", "performance": "#da4453"}
+DEFAULT_FILL = "#7f8c8d"
+GPU_ON = "#a35bd8"
 
 
-def make_icon(fill: str, border: str, dim: bool = False) -> QIcon:
-    """Скруглённый квадрат с буквами AH: рамка border, тёмный зазор, внутри fill.
-    dim — идёт переключение видеокарты."""
+def make_icon(fill: str, gpu_on: bool, dim: bool = False) -> QIcon:
+    """Скруглённый квадрат цвета режима с буквами AH; gpu_on — фиолетовая полоска снизу;
+    dim — идёт переключение видеокарты (бледнее)."""
     icon = QIcon()
     for size in (16, 22, 24, 32, 48, 64, 128):
         pm = QPixmap(size, size)
@@ -60,21 +58,26 @@ def make_icon(fill: str, border: str, dim: bool = False) -> QIcon:
         m = size * 0.04
         rect = QRectF(m, m, size - 2 * m, size - 2 * m)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(border))
-        p.drawRoundedRect(rect, size * 0.22, size * 0.22)
-        w = max(2.0, size * 0.13)
-        inner = rect.adjusted(w, w, -w, -w)
-        p.setBrush(QColor(GAP))
-        p.drawRoundedRect(inner, size * 0.15, size * 0.15)
-        g = max(1.0, size * 0.035)
         p.setBrush(QColor(fill))
-        p.drawRoundedRect(inner.adjusted(g, g, -g, -g), size * 0.13, size * 0.13)
+        p.drawRoundedRect(rect, size * 0.22, size * 0.22)
+        text_rect = QRectF(rect)
+        if gpu_on:
+            h = max(4.0, size * 0.24)
+            top = size - m - h
+            # нижняя часть того же скруглённого квадрата — фиолетовая, над ней тонкая тень
+            p.setClipRect(QRectF(0, top, size, h + m))
+            p.setBrush(QColor(GPU_ON))
+            p.drawRoundedRect(rect, size * 0.22, size * 0.22)
+            p.setClipping(False)
+            p.setBrush(QColor(0, 0, 0, 90))
+            p.drawRect(QRectF(rect.left(), top, rect.width(), max(1.0, size * 0.03)))
+            text_rect = QRectF(rect.left(), rect.top(), rect.width(), rect.height() - h)
         font = QFont()
         font.setBold(True)
-        font.setPixelSize(max(7, round(size * 0.45)))
+        font.setPixelSize(max(7, round(size * (0.42 if gpu_on else 0.48))))
         p.setFont(font)
         p.setPen(QColor("white"))
-        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "AH")
+        p.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "AH")
         p.end()
         icon.addPixmap(pm)
     return icon
@@ -144,11 +147,10 @@ class Tray:
         g = s.get("gpu") or {}
         switching = bool(g.get("switching"))
         off = (g.get("target") == "eco") if switching else g.get("state") == "off"
-        gpu_mode = "auto" if g.get("auto_eco") else ("eco" if off else "standard")
-        key = (gpu_mode, profile, switching)
+        key = (profile, off, switching)
         if key != getattr(self, "_icon_key", None):
             self._icon_key = key
-            self.icon.setIcon(make_icon(PROFILE_FILL.get(profile, DEFAULT_FILL), GPU_BORDER[gpu_mode], switching))
+            self.icon.setIcon(make_icon(PROFILE_FILL.get(profile, DEFAULT_FILL), gpu_on=not off, dim=switching))
         for p, a in self.mode_actions.items():
             a.setChecked(p == profile)
         g = s.get("gpu") or {}
@@ -184,7 +186,7 @@ def main() -> int:
     app.setApplicationDisplayName("Asus-helper")
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("asus-helper")
-    app.setWindowIcon(QIcon.fromTheme("asus-helper", make_icon(PROFILE_FILL["balanced"], GPU_BORDER["standard"])))
+    app.setWindowIcon(QIcon.fromTheme("asus-helper", make_icon(PROFILE_FILL["balanced"], gpu_on=False)))
     app.setQuitOnLastWindowClosed(False)
 
     system = Gio.bus_get_sync(Gio.BusType.SYSTEM)
