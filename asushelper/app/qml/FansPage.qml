@@ -213,6 +213,26 @@ ColumnLayout {
 
         RowLayout {
             Layout.fillWidth: true
+            visible: page.st.cpu_boost !== null && page.st.cpu_boost !== undefined
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+                QQC2.Label { text: "Turbo Boost процессора" }
+                QQC2.Label {
+                    text: "выключен — холоднее и тише, но медленнее в тяжёлых задачах"
+                    font: Kirigami.Theme.smallFont
+                    opacity: 0.6
+                }
+            }
+            QQC2.Switch {
+                readonly property var mine: page.pcfg.cpu_boost
+                checked: mine === null || mine === undefined ? page.profile !== "quiet" : mine
+                onToggled: backend.setCpuBoost(page.profile, checked)
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
             QQC2.Label { text: "Энергосбережение CPU (EPP)"; Layout.fillWidth: true }
             QQC2.ComboBox {
                 id: epp

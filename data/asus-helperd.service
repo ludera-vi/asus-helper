@@ -15,6 +15,7 @@ RestartSec=2
 # Нужен доступ на запись к /sys и /dev/hidraw*, остальное закрыто
 ProtectSystem=full
 ReadWritePaths=/etc/asus-helper
+StateDirectory=asus-helper
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes

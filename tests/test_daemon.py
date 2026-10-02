@@ -275,3 +275,51 @@ class GpuTest(unittest.TestCase):
         self.assertEqual(gpu.state(), "off")
         self.assertIsNone(gpu.find_gpu())     # на шине только Intel
         self.assertFalse(gpu.fixup())          # убирать нечего
+
+
+class SlashTest(unittest.TestCase):
+    def setUp(self):
+        fakesys.build(ROOT)
+
+    def test_battery_pattern(self):
+        from asushelper.daemon import slash
+        self.assertEqual(slash.battery_pattern(3, 100), [255] * 7)
+        self.assertEqual(slash.battery_pattern(3, 0), [0] * 7)
+        p = slash.battery_pattern(3, 50)        # 3.5 сегмента справа
+        self.assertEqual(p[4:], [255, 255, 255])
+        self.assertTrue(0 < p[3] < 255)
+        self.assertEqual(p[:3], [0, 0, 0])
+
+    def test_apply_sequence(self):
+        from asushelper.daemon import slash
+        self.assertEqual(slash.find_device(), "/dev/hidraw1")
+        cfg = {"brightness": 2, "mode": "flow", "interval": 1, "on_battery": True, "lid_closed": False}
+        self.assertTrue(slash.apply(cfg, wake=True))
+        data = open(ROOT + "/dev/hidraw1", "rb").read()
+        reports = [data[i:i + 128] for i in range(0, len(data), 128)]
+        self.assertTrue(all(r[0] == 0x5E and len(r) == 128 for r in reports))
+        cmds = [r[1] for r in reports]
+        # разбудить, на батарее, крышка, включить, init ×2, режим ×2, опции, сохранить
+        self.assertEqual(cmds, [ord("A"), 0xC2, 0xD1, 0xD8, 0xD8, 0xD8, 0xD7, 0xD2, 0xD2, 0xD3, 0xD3, 0xD4])
+        self.assertEqual(reports[9][6], 0x19)                          # код «Течение»
+        self.assertEqual((reports[10][10], reports[10][12]), (170, 1))  # яркость 2 → 170, пауза 1
+
+    def test_off(self):
+        from asushelper.daemon import slash
+        cfg = {"brightness": 0, "mode": "flow", "interval": 0, "on_battery": True, "lid_closed": True}
+        self.assertTrue(slash.apply(cfg))
+        data = open(ROOT + "/dev/hidraw1", "rb").read()
+        self.assertEqual(data[128 * 2 + 1:128 * 2 + 6], bytes([0xD8, 0x02, 0x00, 0x01, 0x80]))
+
+
+class BoostTest(unittest.TestCase):
+    def setUp(self):
+        fakesys.build(ROOT)
+
+    def test_quiet_turns_boost_off(self):
+        cfg = Config(os.path.join(CONF, "boost.json"))
+        modes = Modes(cfg, lambda: None)
+        modes._apply_power("quiet")
+        self.assertEqual(fakesys.read(ROOT, hw.NO_TURBO), "1")
+        modes._apply_power("performance")
+        self.assertEqual(fakesys.read(ROOT, hw.NO_TURBO), "0")

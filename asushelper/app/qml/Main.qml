@@ -40,6 +40,9 @@ Window {
 
     // после открытия окно ещё не получило фокус — не закрываем его сразу
     Timer { id: keepOpen; interval: 400 }
+    function openMonitor() {
+        if (stack.depth === 1) stack.push(scrolled.createObject(stack, { page: monitorPage }))
+    }
     function openFans() {
         if (stack.depth === 1) stack.push(scrolled.createObject(stack, { page: fansPage }))
     }
@@ -93,6 +96,16 @@ Window {
                     }
                 }
                 Item { Layout.fillWidth: true }
+                QQC2.ToolButton {
+                    icon.name: "office-chart-line-forecast-symbolic"
+                    text: "Датчики и батарея"
+                    display: QQC2.AbstractButton.IconOnly
+                    enabled: stack.depth === 1
+                    onClicked: win.openMonitor()
+                    QQC2.ToolTip.visible: hovered
+                    QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    QQC2.ToolTip.text: "Графики температуры, вентиляторов и батареи"
+                }
                 QQC2.ToolButton {
                     icon.name: "window-close-symbolic"
                     text: "Закрыть окно"
@@ -149,6 +162,7 @@ Window {
 
     Component { id: mainPage; MainPage { onOpenFans: win.openFans() } }
     Component { id: fansPage; FansPage { onBack: stack.pop() } }
+    Component { id: monitorPage; MonitorPage { onBack: stack.pop() } }
 
     // высота содержимого текущей страницы — по ней окно подбирает свою высоту
     readonly property real pageHeight: stack.currentItem ? stack.currentItem.pageHeight || 0 : 0

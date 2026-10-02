@@ -18,6 +18,9 @@
   asus-helper-cli kbd [0-3]              яркость подсветки клавиатуры
   asus-helper-cli aura static|breathe|cycle|strobe [#RRGGBB] [#RRGGBB] [slow|normal|fast]
   asus-helper-cli aura power awake,boot,sleep,shutdown   когда светиться (перечислить нужное)
+  asus-helper-cli slash [0-3] [АНИМАЦИЯ] [пауза 0-5]   полоса на крышке (0 — выключить)
+  asus-helper-cli slash options battery,lid            когда светиться: на батарее, с закрытой крышкой
+  asus-helper-cli boost PROFILE on|off                 Turbo Boost процессора в режиме
   asus-helper-cli import-asusd            перенести настройки из /etc/asusd (root, демон остановлен)
 """
 import json
@@ -79,7 +82,8 @@ def fmt_curve(c: dict | None) -> str:
 def cmd_status(cl: Client, _args):
     s = cl.state()
     b = s.get("battery") or {}
-    print(f"Режим      : {NAMES.get(s['profile'], s['profile'])}   (EPP {s['epp']})")
+    boost = "" if s.get("cpu_boost") is None else f", Turbo Boost {'вкл' if s['cpu_boost'] else 'выкл'}"
+    print(f"Режим      : {NAMES.get(s['profile'], s['profile'])}   (EPP {s['epp']}{boost})")
     print(f"Питание    : {'сеть' if s['ac'] else 'батарея'}   "
           f"авто: {'да' if s['auto_profile'] else 'нет'}  "
           f"(сеть → {NAMES[s['profile_on_ac']]}, батарея → {NAMES[s['profile_on_battery']]})")
@@ -244,7 +248,32 @@ def cmd_aura(cl, args):
                 colors[1] if len(colors) > 1 else k["color2"], speeds[0] if speeds else k["speed"])
 
 
-COMMANDS = {"gpu": cmd_gpu, "kbd": cmd_kbd, "aura": cmd_aura, "status": cmd_status, "profile": cmd_profile, "auto": cmd_auto, "charge": cmd_charge,
+def cmd_slash(cl, args):
+    sl = cl.state().get("slash") or {}
+    if not sl.get("supported"):
+        raise Error("полоса Slash не найдена")
+    names = {m["id"]: m["name"] for m in sl["modes"]}
+    if not args:
+        print(f"яркость {sl['brightness']}/3, {names.get(sl['mode'], sl['mode'])}, пауза {sl['interval']} с, "
+              f"на батарее: {'да' if sl['on_battery'] else 'нет'}, с закрытой крышкой: {'да' if sl['lid_closed'] else 'нет'}")
+        print("анимации: " + ", ".join(names))
+    elif args[0] == "options":
+        on = set(args[1].split(",")) if len(args) > 1 else set()
+        cl.call("SetSlashOptions", "bb", "battery" in on, "lid" in on)
+    else:
+        level = int(args[0]) if args[0].isdigit() else sl["brightness"] or 2
+        mode = next((a for a in args if a in names), sl["mode"])
+        nums = [int(a) for a in args[1:] if a.isdigit()]
+        cl.call("SetSlash", "suu", mode, level, nums[0] if nums else sl["interval"])
+
+
+def cmd_boost(cl, args):
+    if len(args) != 2 or args[1] not in ("on", "off"):
+        raise Error("asus-helper-cli boost PROFILE on|off")
+    cl.call("SetCpuBoost", "sb", args[0], args[1] == "on")
+
+
+COMMANDS = {"slash": cmd_slash, "boost": cmd_boost, "gpu": cmd_gpu, "kbd": cmd_kbd, "aura": cmd_aura, "status": cmd_status, "profile": cmd_profile, "auto": cmd_auto, "charge": cmd_charge,
             "epp": cmd_epp, "fan": cmd_fan, "power": cmd_power, "import-asusd": cmd_import}
 
 

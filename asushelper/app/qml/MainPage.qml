@@ -19,6 +19,7 @@ ColumnLayout {
     readonly property var disp: backend.display || {}
     readonly property var nv: backend.nvidia || {}
     readonly property var toggles: st.toggles || {}
+    readonly property var sl: st.slash || {}
 
     spacing: Kirigami.Units.largeSpacing * 1.5
 
@@ -240,6 +241,46 @@ ColumnLayout {
         }
     }
 
+    // ---------- Slash на крышке ----------
+    Section {
+        visible: !!page.sl.supported
+        title: "Подсветка крышки"
+        value: page.sl.brightness > 0 ? ((page.sl.modes || []).find(m => m.id === page.sl.mode) || {}).name || "" : "выключена"
+        iconName: "computer-laptop-symbolic"
+
+        RowLayout {
+            spacing: Kirigami.Units.smallSpacing
+            Repeater {
+                model: ["Выкл", "Тускло", "Средне", "Ярко"]
+                Tile {
+                    required property string modelData
+                    required property int index
+                    compact: true
+                    text: modelData
+                    selected: page.sl.brightness === index
+                    onClicked: backend.setSlash(page.sl.mode, index, page.sl.interval)
+                }
+            }
+        }
+        RowLayout {
+            spacing: Kirigami.Units.smallSpacing
+            QQC2.ComboBox {
+                Layout.fillWidth: true
+                Layout.preferredWidth: 2
+                model: (page.sl.modes || []).map(m => m.name)
+                currentIndex: Math.max(0, (page.sl.modes || []).findIndex(m => m.id === page.sl.mode))
+                onActivated: i => backend.setSlash(page.sl.modes[i].id, Math.max(1, page.sl.brightness), page.sl.interval)
+            }
+            QQC2.Button {
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                text: "Ещё"
+                icon.name: "settings-configure-symbolic"
+                onClicked: slashPopup.open()
+            }
+        }
+    }
+
     // ---------- батарея ----------
     Section {
         visible: page.bat.capacity !== undefined
@@ -329,6 +370,47 @@ ColumnLayout {
         title: "Цвет подсветки"
         onAccepted: backend.setAura(page.kbd.mode === "cycle" ? "static" : page.kbd.mode,
                                     selectedColor.toString().toUpperCase(), page.kbd.color2, page.kbd.speed)
+    }
+
+    // ---------- всплывающее: ещё про Slash ----------
+    QQC2.Popup {
+        id: slashPopup
+        parent: QQC2.Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - Kirigami.Units.gridUnit * 2, Kirigami.Units.gridUnit * 20)
+        modal: true
+        padding: Kirigami.Units.largeSpacing * 1.5
+        contentItem: ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            Kirigami.Heading { level: 4; text: "Подсветка крышки" }
+            RowLayout {
+                QQC2.Label { text: "Пауза между повторами"; Layout.fillWidth: true }
+                QQC2.Label { text: intervalSlider.value + " с"; font.weight: Font.DemiBold }
+            }
+            QQC2.Slider {
+                id: intervalSlider
+                Layout.fillWidth: true
+                from: 0; to: 5; stepSize: 1
+                snapMode: QQC2.Slider.SnapAlways
+                value: page.sl.interval || 0
+                onPressedChanged: if (!pressed) backend.setSlash(page.sl.mode, page.sl.brightness, value)
+            }
+            QQC2.Switch {
+                text: "Светиться на батарее"
+                checked: !!page.sl.on_battery
+                onToggled: backend.setSlashOptions(checked, !!page.sl.lid_closed)
+            }
+            QQC2.Switch {
+                text: "Светиться с закрытой крышкой"
+                checked: !!page.sl.lid_closed
+                onToggled: backend.setSlashOptions(!!page.sl.on_battery, checked)
+            }
+            QQC2.Button {
+                Layout.alignment: Qt.AlignRight
+                text: "Готово"
+                onClicked: slashPopup.close()
+            }
+        }
     }
 
     // ---------- всплывающее: ещё про подсветку ----------

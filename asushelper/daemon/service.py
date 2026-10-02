@@ -13,6 +13,8 @@ from .. import BUS_NAME, FANS, INTERFACE, OBJECT_PATH, PROFILES, __version__
 from . import aura
 from . import gpu
 from . import hardware as hw
+from . import history
+from . import slash
 from .config import Config
 from .modes import Modes
 
@@ -56,6 +58,18 @@ XML = f"""
     <method name="SetToggle">
       <arg type="s" direction="in" name="attr"/><arg type="b" direction="in" name="enabled"/>
     </method>
+    <method name="SetCpuBoost">
+      <arg type="s" direction="in" name="profile"/><arg type="b" direction="in" name="enabled"/>
+    </method>
+    <method name="SetSlash">
+      <arg type="s" direction="in" name="mode"/><arg type="u" direction="in" name="brightness"/>
+      <arg type="u" direction="in" name="interval"/>
+    </method>
+    <method name="SetSlashOptions">
+      <arg type="b" direction="in" name="on_battery"/><arg type="b" direction="in" name="lid_closed"/>
+    </method>
+    <!-- датчики за последний час (раз в 5 с) и здоровье батареи по дням -->
+    <method name="GetHistory"><arg type="s" direction="out" name="json"/></method>
     <method name="SetKeyboardBrightness"><arg type="u" direction="in" name="level"/></method>
     <method name="SetAura">
       <arg type="s" direction="in" name="mode"/><arg type="s" direction="in" name="color"/>
@@ -77,7 +91,7 @@ XML = f"""
 """
 
 # Методы, которые только читают — без polkit
-READ_ONLY = {"GetState", "GetConfig"}
+READ_ONLY = {"GetState", "GetConfig", "GetHistory"}
 
 
 class Failed(Exception):
@@ -91,6 +105,7 @@ class Service:
         self.listeners = []   # другие интерфейсы (эмуляция PPD) — тоже хотят знать о смене режима
         self.modes = Modes(config, self._changed)
         self.gpu = gpu.Switcher(self._gpu_done)
+        self.history = history.History()
         self._last_profile = None
         self._save_brightness = 0
         node = Gio.DBusNodeInfo.new_for_xml(XML)
@@ -114,6 +129,9 @@ class Service:
             "battery": hw.battery(),
             "power_limits": hw.power_limits(),
             "toggles": {a: v["value"] == 1 for a in hw.TOGGLE_ATTRS if (v := hw.armoury_attr(a))},
+            "cpu_boost": hw.turbo(),
+            "slash": {**self.config.data["slash"], "supported": slash.supported(),
+                      "modes": [{"id": k, "name": v[1]} for k, v in slash.MODES.items()]},
             "gpu": {
                 "supported": gpu.supported(),
                 "state": gpu.state() if gpu.supported() else None,
@@ -138,6 +156,10 @@ class Service:
         if gpu.supported():
             gpu.fixup()
         self.apply_keyboard()
+        self.apply_slash(wake=True)
+        self.history.start()
+        # «Заряд батареи» на Slash — обновлять раз в минуту
+        GLib.timeout_add_seconds(60, self._slash_battery_tick)
         self.modes.startup()
         self._auto_eco()
         self._watch_brightness()
@@ -145,6 +167,7 @@ class Service:
     def resumed(self) -> None:
         self.modes.ac = hw.on_ac()
         self.apply_keyboard()
+        self.apply_slash(wake=True)
         self.modes.reapply("выход из сна")
         self._auto_eco()
 
@@ -158,6 +181,18 @@ class Service:
         k = self.config.data["keyboard"]
         aura.set_brightness(k["brightness"])
         aura.apply(k)
+
+    def apply_slash(self, wake: bool = False) -> bool:
+        if not slash.supported():
+            return False
+        b = hw.battery() or {}
+        return slash.apply(self.config.data["slash"], b.get("capacity"), wake)
+
+    def _slash_battery_tick(self):
+        c = self.config.data["slash"]
+        if c["mode"] == "battery" and c["brightness"] > 0:
+            self.apply_slash()
+        return GLib.SOURCE_CONTINUE
 
     def _auto_eco(self) -> None:
         if not (self.config.data["gpu"]["auto_eco"] and gpu.supported()):
@@ -357,6 +392,36 @@ class Service:
         if not sysfs.write(f"{hw.ARMOURY}/{attr}/current_value", 1 if enabled else 0):
             raise Failed("BIOS не принял значение")
         self._changed()
+
+    def do_SetCpuBoost(self, profile, enabled):
+        check_profile(profile)
+        if hw.turbo() is None:
+            raise Failed("Turbo Boost не управляется (нет intel_pstate)")
+        self.config.profile(profile)["cpu_boost"] = bool(enabled)
+        self._save_and_reapply(profile)
+
+    def do_SetSlash(self, mode, brightness, interval):
+        if not slash.supported():
+            raise Failed("полоса Slash не найдена")
+        if mode not in slash.MODES:
+            raise Failed(f"анимация: {', '.join(slash.MODES)}")
+        if brightness > 3 or interval > 5:
+            raise Failed("яркость 0–3, пауза 0–5")
+        self.config.data["slash"].update(mode=mode, brightness=int(brightness), interval=int(interval))
+        if not self.apply_slash():
+            raise Failed("Slash не ответила (журнал демона)")
+        self.config.save()
+        self._changed()
+
+    def do_SetSlashOptions(self, on_battery, lid_closed):
+        self.config.data["slash"].update(on_battery=bool(on_battery), lid_closed=bool(lid_closed))
+        if not self.apply_slash():
+            raise Failed("Slash не ответила (журнал демона)")
+        self.config.save()
+        self._changed()
+
+    def do_GetHistory(self):
+        return json.dumps(self.history.dump())
 
     def do_SetKeyboardBrightness(self, level):
         if not aura.set_brightness(level):

@@ -59,6 +59,8 @@ def build(root: str, ac: bool = False) -> None:
     _w(root, "/sys/class/hidraw/hidraw0/device/uevent", "HID_ID=0003:00000B05:000019B6\nHID_NAME=ITE")
     _w(root, "/sys/class/hidraw/hidraw1/device/uevent", "HID_ID=0003:00000B05:0000193B")
     _w(root, "/dev/hidraw0", "")
+    _w(root, "/dev/hidraw1", "")
+    _w(root, "/sys/devices/system/cpu/intel_pstate/no_turbo", 0)
     os.makedirs(root + "/sys/bus/pci/devices/0000:00:02.0", exist_ok=True)
     _w(root, "/sys/bus/pci/devices/0000:00:02.0/vendor", "0x8086")
     _w(root, "/sys/bus/pci/devices/0000:00:02.0/class", "0x030000")

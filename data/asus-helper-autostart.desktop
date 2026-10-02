@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Asus-helper
+Comment=Значок Asus-helper в трее
+Exec=asus-helper
+Icon=asus-helper
+Terminal=false
+NoDisplay=true
+X-KDE-autostart-phase=2

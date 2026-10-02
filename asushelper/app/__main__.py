@@ -119,7 +119,7 @@ class Tray:
 def main() -> int:
     ap = argparse.ArgumentParser(prog="asus-helper")
     ap.add_argument("--show", action="store_true", help="сразу открыть окно")
-    ap.add_argument("--page", choices=["main", "fans"], default="main", help="с какой страницы открыть (с --show)")
+    ap.add_argument("--page", choices=["main", "fans", "monitor"], default="main", help="с какой страницы открыть (с --show)")
     ap.add_argument("--no-osd", action="store_true", help="не показывать карточки KDE (их показывает asus-helper-agent)")
     args, qt_args = ap.parse_known_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -160,8 +160,8 @@ def main() -> int:
 
     if args.show:
         tray.toggle()
-        if args.page == "fans":
-            QMetaObject.invokeMethod(window, "openFans")
+        if args.page != "main":
+            QMetaObject.invokeMethod(window, "openFans" if args.page == "fans" else "openMonitor")
     return app.exec()
 
 

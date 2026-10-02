@@ -46,6 +46,21 @@ def set_epp(value: str) -> bool:
     return all([sysfs.write(p, value) for p in sysfs.find(EPP_GLOB)])
 
 
+# ---------- Turbo Boost (intel_pstate) ----------
+NO_TURBO = "/sys/devices/system/cpu/intel_pstate/no_turbo"
+
+
+def turbo() -> bool | None:
+    v = sysfs.read(NO_TURBO)
+    return None if v is None else v == "0"
+
+
+def set_turbo(on: bool) -> bool:
+    if turbo() is None:
+        return False
+    return turbo() == on or sysfs.write(NO_TURBO, 0 if on else 1)
+
+
 # ---------- настройки BIOS (asus-armoury) ----------
 ARMOURY = "/sys/class/firmware-attributes/asus-armoury/attributes"
 # Числовые параметры мощности; min/max ядро меняет при переключении сеть ↔ батарея

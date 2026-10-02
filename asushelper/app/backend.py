@@ -37,6 +37,7 @@ class Backend(QObject):
     connectedChanged = Signal()
     activeChanged = Signal()
     screenAutoChanged = Signal()
+    historyChanged = Signal()
     factoryCurves = Signal("QVariant")   # ответ на requestFactoryCurves
     message = Signal(str, bool)          # текст, ошибка ли
 
@@ -51,6 +52,7 @@ class Backend(QObject):
         self._active = False
         self._settings = load_settings()
         self._last_ac = None
+        self._history = {}
         self._timer = QTimer(self, interval=POLL_MS, timeout=self.refresh)
         bus.signal_subscribe(BUS_NAME, INTERFACE, "StateChanged", OBJECT_PATH, None,
                              Gio.DBusSignalFlags.NONE, self._on_state_signal)
@@ -68,6 +70,7 @@ class Backend(QObject):
     def _get_connected(self): return self._connected
     def _get_active(self): return self._active
     def _get_screen_auto(self): return bool(self._settings.get("screen_auto", False))
+    def _get_history(self): return self._history
 
     def _set_active(self, v: bool):
         """Окно открыто — опрашиваем датчики; закрыто — только сигналы демона."""
@@ -89,6 +92,7 @@ class Backend(QObject):
     connected = Property(bool, _get_connected, notify=connectedChanged)
     active = Property(bool, _get_active, _set_active, notify=activeChanged)
     screenAuto = Property(bool, _get_screen_auto, notify=screenAutoChanged)
+    history = Property("QVariant", _get_history, notify=historyChanged)
 
     # ---------- D-Bus ----------
     def _call(self, method: str, sig: str | None = None, args: tuple = (), done=None, quiet=False):
@@ -159,8 +163,7 @@ class Backend(QObject):
 
     @Slot(str, str, "QVariantList", "QVariantList")
     def setFanCurve(self, profile, fan, temp, pwm):
-        self._call("SetFanCurve", "ssaiai", (profile, fan, [int(t) for t in temp], [int(p) for p in pwm]),
-                   done=lambda _: self.message.emit("Кривая сохранена", False))
+        self._call("SetFanCurve", "ssaiai", (profile, fan, [int(t) for t in temp], [int(p) for p in pwm]))
 
     @Slot(str, str)
     def resetFanCurve(self, profile, fan): self._call("ResetFanCurve", "ss", (profile, fan))
@@ -183,6 +186,41 @@ class Backend(QObject):
 
     @Slot(str, bool)
     def setToggle(self, attr, v): self._call("SetToggle", "sb", (attr, v))
+
+    @Slot(str, bool)
+    def setCpuBoost(self, profile, v): self._call("SetCpuBoost", "sb", (profile, v))
+
+    @Slot(str, int, int)
+    def setSlash(self, mode, brightness, interval): self._call("SetSlash", "suu", (mode, brightness, interval))
+
+    @Slot(bool, bool)
+    def setSlashOptions(self, on_battery, lid_closed): self._call("SetSlashOptions", "bb", (on_battery, lid_closed))
+
+    # ---------- история (для графиков) ----------
+    @Slot()
+    def refreshHistory(self):
+        """Датчики за час — от демона; заряд батареи за сутки — от UPower (он ведёт историю сам)."""
+        def got(text):
+            h = json.loads(text)
+            h["charge"] = self._history.get("charge", [])
+            self._history = h
+            self.historyChanged.emit()
+        self._call("GetHistory", done=got, quiet=True)
+        self._upower_history()
+
+    def _upower_history(self):
+        def done(conn, res):
+            try:
+                rows = conn.call_finish(res).unpack()[0]
+            except GLib.Error as e:
+                log.info("история UPower: %s", e.message)
+                return
+            # (время, заряд %, состояние); UPower отдаёт от новых к старым
+            self._history = dict(self._history, charge=sorted([[t, v] for t, v, st in rows if t and st and v > 0]))
+            self.historyChanged.emit()
+        self.bus.call("org.freedesktop.UPower", "/org/freedesktop/UPower/devices/battery_BAT1",
+                      "org.freedesktop.UPower.Device", "GetHistory", GLib.Variant("(suu)", ("charge", 86400, 300)),
+                      None, Gio.DBusCallFlags.NONE, 5000, None, done)
 
     @Slot(int)
     def setKeyboardBrightness(self, v): self._call("SetKeyboardBrightness", "u", (v,))

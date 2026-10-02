@@ -16,11 +16,14 @@ CONFIG_DIR = os.environ.get("ASUSHELPER_CONFIG_DIR", "/etc/asus-helper")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 DEFAULT_EPP = {"quiet": "power", "balanced": "balance_power", "performance": "performance"}
+# Turbo Boost: в тихом режиме выключен — ноутбук холоднее и тише, особенно на батарее
+DEFAULT_BOOST = {"quiet": False, "balanced": True, "performance": True}
 
 
 def default_profile() -> dict:
     return {
         "epp": None,             # None — по умолчанию из DEFAULT_EPP
+        "cpu_boost": None,       # None — по умолчанию из DEFAULT_BOOST
         # своя кривая для вентилятора; null — кривая BIOS для этого режима
         "fan_curves": {f: None for f in FANS},
         # параметры asus-armoury (ppt_pl1_spl, nv_temp_target …); отсутствие — не трогать
@@ -42,6 +45,13 @@ DEFAULTS = {
     "gpu": {
         # «Оптимальный» как в G-Helper: на батарее NVIDIA выключается (Eco), от сети включается
         "auto_eco": False,
+    },
+    "slash": {
+        "brightness": 0,          # 0 — выключена, 1–3
+        "mode": "bounce",
+        "interval": 0,            # пауза между повторами анимации, 0–5 с
+        "on_battery": True,       # светиться на батарее
+        "lid_closed": False,      # светиться при закрытой крышке
     },
     "keyboard": {
         "brightness": 2,          # 0–3; меняется и клавишами — демон запоминает
@@ -97,6 +107,10 @@ class Config:
 
     def epp(self, name: str) -> str:
         return self.profile(name).get("epp") or DEFAULT_EPP[name]
+
+    def cpu_boost(self, name: str) -> bool:
+        v = self.profile(name).get("cpu_boost")
+        return DEFAULT_BOOST[name] if v is None else bool(v)
 
     def profile_for(self, ac: bool) -> str:
         p = self.data["profile_on_ac" if ac else "profile_on_battery"]

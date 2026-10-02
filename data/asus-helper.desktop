@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Asus-helper
+GenericName=Управление ноутбуком ASUS
+Comment=Режимы, вентиляторы, видеокарта, подсветка и батарея
+Exec=asus-helper
+Icon=asus-helper
+Terminal=false
+Categories=Settings;HardwareSettings;
+Keywords=asus;rog;fan;gpu;nvidia;aura;slash;battery;вентилятор;видеокарта;подсветка;батарея;
+StartupNotify=false
+# Клавиша ROG над клавиатурой (KEY_PROG1 → Launch (1)) открывает окно; меняется в «Настройки → Комбинации клавиш»
+X-KDE-Shortcuts=Launch (1)

@@ -111,6 +111,7 @@ class Modes:
 
     def _apply_power(self, name: str) -> None:
         hw.set_epp(self.config.epp(name))
+        hw.set_turbo(self.config.cpu_boost(name))
         for attr, value in self.config.profile(name)["power_limits"].items():
             if value is not None:
                 hw.set_armoury(attr, value)
