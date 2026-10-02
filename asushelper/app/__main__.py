@@ -31,8 +31,8 @@ APP_BUS_NAME = "org.asushelper.App"
 APP_PATH = "/org/asushelper/App"
 APP_XML = """<node><interface name="org.asushelper.App"><method name="Toggle"/></interface></node>"""
 
-PROFILE_ICONS = {"quiet": "battery-profile-powersave", "balanced": "battery-profile-balanced",
-                 "performance": "battery-profile-performance"}
+PROFILE_ICONS = {"quiet": "battery-profile-powersave-symbolic", "balanced": "battery-profile-balanced-symbolic",
+                 "performance": "battery-profile-performance-symbolic"}
 PROFILE_NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance": "Турбо"}
 GPU_NAMES = {"off": "выключена (Eco)", "suspended": "спит", "active": "работает", "missing": "без драйвера"}
 
@@ -98,7 +98,7 @@ class Tray:
     def update(self):
         s = self.backend.state or {}
         profile = s.get("profile")
-        self.icon.setIcon(QIcon.fromTheme(PROFILE_ICONS.get(profile, "speedometer")))
+        self.icon.setIcon(QIcon.fromTheme(PROFILE_ICONS.get(profile, "speedometer-symbolic")))
         for p, a in self.mode_actions.items():
             a.setChecked(p == profile)
         g = s.get("gpu") or {}

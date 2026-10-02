@@ -22,7 +22,7 @@ ColumnLayout {
     // ---------- режим ----------
     Section {
         title: "Режим"
-        iconName: "speedometer"
+        iconName: "speedometer-symbolic"
         info: (page.st.cpu_temp !== undefined && page.st.cpu_temp !== null ? Math.round(page.st.cpu_temp) + " °C" : "")
               + (page.st.fans ? "  ·  " + page.st.fans.cpu + " / " + page.st.fans.gpu + " об/мин" : "")
 
@@ -86,7 +86,7 @@ ColumnLayout {
             Tile {
                 text: "Eco"
                 subtitle: "NVIDIA выключена"
-                iconName: "battery-profile-powersave"
+                iconName: "battery-profile-powersave-symbolic"
                 accent: Kirigami.Theme.positiveTextColor
                 selected: !page.gpu.auto_eco && page.gpu.state === "off"
                 busy: page.gpu.switching && page.gpu.state !== "off"
@@ -96,7 +96,7 @@ ColumnLayout {
             Tile {
                 text: "Стандарт"
                 subtitle: "гибрид"
-                iconName: "video-display"
+                iconName: "monitor-symbolic"
                 accent: Kirigami.Theme.highlightColor
                 selected: !page.gpu.auto_eco && page.gpu.state !== "off"
                 busy: page.gpu.switching && page.gpu.state === "off"
@@ -106,7 +106,7 @@ ColumnLayout {
             Tile {
                 text: "Оптимальный"
                 subtitle: "Eco на батарее"
-                iconName: "battery-good"
+                iconName: "battery-good-symbolic"
                 accent: Kirigami.Theme.neutralTextColor
                 selected: !!page.gpu.auto_eco
                 enabled: !page.gpu.switching && page.gpu.mux_hybrid

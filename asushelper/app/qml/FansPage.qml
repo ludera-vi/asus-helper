@@ -88,7 +88,7 @@ ColumnLayout {
             property bool dirty: false
 
             title: modelData.name
-            iconName: "temperature-normal"
+            iconName: "temperature-normal-symbolic"
             info: page.isCurrent && rpm ? rpm + " об/мин" : ""
 
             Component.onCompleted: { if (fan === "cpu") page.cpuEditor = editor; else page.gpuEditor = editor }

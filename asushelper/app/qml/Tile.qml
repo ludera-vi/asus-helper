@@ -45,8 +45,9 @@ QQC2.AbstractButton {
             Kirigami.Icon {
                 anchors.fill: parent
                 source: tile.iconName
+                // символьные иконки красим цветом плитки, цветные оставляем как есть
+                isMask: tile.iconName.endsWith("-symbolic")
                 color: tile.selected ? tile.accent : Kirigami.Theme.textColor
-                isMask: true
                 visible: !tile.busy
             }
             QQC2.BusyIndicator {

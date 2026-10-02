@@ -46,6 +46,11 @@ Window {
         visible = true
     }
 
+    Binding { target: Theme; property: "positive"; value: Kirigami.Theme.positiveTextColor }
+    Binding { target: Theme; property: "highlight"; value: Kirigami.Theme.highlightColor }
+    Binding { target: Theme; property: "negative"; value: Kirigami.Theme.negativeTextColor }
+    Binding { target: Theme; property: "neutral"; value: Kirigami.Theme.neutralTextColor }
+
     Shortcut { sequence: "Escape"; onActivated: stack.depth > 1 ? stack.pop() : (win.visible = false) }
 
     Rectangle {

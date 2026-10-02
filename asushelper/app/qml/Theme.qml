@@ -1,13 +1,18 @@
 // Общие справочники окна: названия, иконки и цвета режимов. Цвета — только из темы KDE.
 pragma Singleton
 import QtQuick
-import org.kde.kirigami as Kirigami
 
 Item {
+    // Цвета темы KDE передаёт окно (Main.qml): у одиночки вне окна своей палитры нет
+    property color positive: "green"
+    property color highlight: "steelblue"
+    property color negative: "red"
+    property color neutral: "orange"
+
     readonly property var profiles: [
-        { id: "quiet", name: "Тихий", hint: "тише и дольше", icon: "battery-profile-powersave" },
-        { id: "balanced", name: "Баланс", hint: "на каждый день", icon: "battery-profile-balanced" },
-        { id: "performance", name: "Турбо", hint: "максимум", icon: "battery-profile-performance" },
+        { id: "quiet", name: "Тихий", hint: "тише и дольше", icon: "battery-profile-powersave-symbolic" },
+        { id: "balanced", name: "Баланс", hint: "на каждый день", icon: "battery-profile-balanced-symbolic" },
+        { id: "performance", name: "Турбо", hint: "максимум", icon: "battery-profile-performance-symbolic" },
     ]
 
     readonly property var auraModes: [
@@ -23,9 +28,9 @@ Item {
     // У каждого режима свой цвет, как в G-Helper: тихий — «хороший», турбо — «горячий»
     function profileColor(id) {
         switch (id) {
-        case "quiet": return Kirigami.Theme.positiveTextColor
-        case "performance": return Kirigami.Theme.negativeTextColor
-        default: return Kirigami.Theme.highlightColor
+        case "quiet": return positive
+        case "performance": return negative
+        default: return highlight
         }
     }
 
@@ -36,7 +41,7 @@ Item {
 
     function profileIcon(id) {
         const p = profiles.find(x => x.id === id)
-        return p ? p.icon : "speedometer"
+        return p ? p.icon : "speedometer-symbolic"
     }
 
     function gpuInfo(gpu, nv) {
