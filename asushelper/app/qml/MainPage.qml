@@ -80,7 +80,9 @@ ColumnLayout {
     Section {
         visible: !!page.gpu.supported
         title: "Видеокарта"
-        value: page.gpu.auto_eco ? "Авто" : page.gpu.state === "off" ? "Eco" : "Стандарт"
+        value: page.gpu.auto_eco ? "Авто"
+             : page.gpu.switching ? (page.gpu.target === "eco" ? "Eco" : "Стандарт")
+             : page.gpu.state === "off" ? "Eco" : "Стандарт"
         iconName: Qt.resolvedUrl("icons/gpu-symbolic.svg")
         info: Theme.gpuInfo(page.gpu, page.nv)
               + (page.fans.gpu == null ? "" : page.fans.gpu === 0 ? "  ·  вентилятор стоит" : "  ·  " + page.fans.gpu + " об/мин")

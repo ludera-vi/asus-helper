@@ -178,8 +178,9 @@ class ModesTest(unittest.TestCase):
         finally:
             sysfs.write = orig
         enables = [w for w in writes if w[0].endswith("_enable")]
-        # GPU: при первом включении режима — узнать заводскую (3) и вернуть BIOS (2); CPU своя — последней
-        self.assertEqual(enables, [("pwm2_enable", "3"), ("pwm2_enable", "2"), ("pwm1_enable", "1")])
+        # при первом включении режима — узнать заводские обоих (3 → 2); своя CPU — последней
+        self.assertEqual(enables, [("pwm1_enable", "3"), ("pwm1_enable", "2"),
+                                   ("pwm2_enable", "3"), ("pwm2_enable", "2"), ("pwm1_enable", "1")])
         # второй раз заводская уже известна — только вернуть BIOS, потом своя
         writes.clear()
         hw.set_fan_curve_mode("gpu", hw.CURVE_ON)

@@ -39,7 +39,7 @@ DEFAULTS = {
     "profile_on_battery": "quiet",
     "auto_profile": True,
     "charge_limit": 100,
-    # Отключать nvidia-powerd на батарее (Dynamic Boost не нужен без сети)
+    # Управлять nvidia-powerd (Dynamic Boost): запускать только в Турбо от сети, иначе он не даёт NVIDIA уснуть
     "stop_nvidia_powerd_on_battery": True,
     "profiles": {p: default_profile() for p in PROFILES},
     "gpu": {

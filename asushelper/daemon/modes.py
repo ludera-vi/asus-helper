@@ -106,14 +106,13 @@ class Modes:
         factory = self.config.data.setdefault("factory_curves", {}).setdefault(name, {})
         learned = False
         for fan in present:
-            if fan in curves:
-                continue
             if fan not in factory:
-                # запомнить заводскую кривую этого режима (сброс точек в ядре → чтение → кривая BIOS)
+                # запомнить заводскую кривую этого режима (сброс точек в ядре → чтение → кривая BIOS);
+                # и у вентиляторов со своей кривой — она будет записана ниже, после всех сбросов
                 if c := hw.factory_fan_curve(fan):
                     factory[fan] = {"temp": c["temp"], "pwm": c["pwm"]}
                     learned = True
-            elif (hw.fan_curve(fan) or {}).get("enabled"):
+            elif fan not in curves and (hw.fan_curve(fan) or {}).get("enabled"):
                 hw.set_fan_curve_mode(fan, hw.CURVE_BIOS)
         if learned:
             log.info("%s: запомнены заводские кривые %s", name, ", ".join(factory))
@@ -123,6 +122,7 @@ class Modes:
         log.info("%s: кривые вентиляторов применены", name)
 
     def _apply_power(self, name: str) -> None:
+        self._nvidia_powerd(self.ac)
         hw.set_epp(self.config.epp(name))
         hw.set_turbo(self.config.cpu_boost(name))
         for attr, value in self.config.profile(name)["power_limits"].items():
@@ -188,7 +188,12 @@ class Modes:
             return
         if subprocess.run(["systemctl", "is-enabled", "-q", "nvidia-powerd"]).returncode != 0:
             return
-        # на батарее Dynamic Boost не нужен; при выключенной NVIDIA сервис всё равно не нужен
+        # Dynamic Boost нужен только в Турбо от сети. В остальное время nvidia-powerd постоянно опрашивает
+        # видеокарту и не даёт ей уснуть (D3cold) — это лишние ватты при простое.
         dgpu_off = (hw.armoury_attr("dgpu_disable") or {}).get("value") == 1
-        action = "start" if ac and not dgpu_off else "stop"
-        subprocess.Popen(["systemctl", "--no-block", action, "nvidia-powerd"])
+        want = ac and not dgpu_off and self.current == "performance"
+        running = subprocess.run(["systemctl", "is-active", "-q", "nvidia-powerd"]).returncode == 0
+        if want != running:
+            log.info("nvidia-powerd: %s", "запускаю (Турбо от сети)" if want else "останавливаю — NVIDIA сможет уснуть")
+            subprocess.run(["systemctl", "reset-failed", "nvidia-powerd"], capture_output=True)
+            subprocess.Popen(["systemctl", "--no-block", "start" if want else "stop", "nvidia-powerd"])

@@ -53,7 +53,7 @@ Item {
         case "active":
             return nv && nv.load !== undefined
                 ? "NVIDIA " + nv.load + "% · " + Math.round(nv.power) + " Вт · " + nv.temp + " °C"
-                : "NVIDIA работает"
+                : (gpu.holders || []).length ? "NVIDIA работает" : "NVIDIA включена"
         case "missing": return "NVIDIA без драйвера"
         default: return gpu.state
         }

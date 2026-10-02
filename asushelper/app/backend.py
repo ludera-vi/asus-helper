@@ -124,7 +124,9 @@ class Backend(QObject):
             self._last_ac = s["ac"]
             if self._get_screen_auto():
                 self._screen_auto_apply()
-        if self._active and (s.get("gpu") or {}).get("state") == "active":
+        g = s.get("gpu") or {}
+        # nvidia-smi будит видеокарту — спрашиваем, только если её и так кто-то использует
+        if self._active and g.get("state") == "active" and g.get("holders"):
             self._poll_nvidia()
         elif self._nvidia:
             self._nvidia = {}
