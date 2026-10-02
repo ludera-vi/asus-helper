@@ -37,16 +37,18 @@ PROFILE_NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance
 GPU_NAMES = {"off": "выключена (Eco)", "suspended": "спит", "active": "работает", "missing": "без драйвера"}
 
 
-# Значок: рамка — видеокарта (серая — NVIDIA отключена, синяя — включена), оранжевая точка — «Авто»,
-# заливка — режим производительности (цвета Breeze)
+# Значок: рамка — режим видеокарты (Eco серая, Стандарт синяя, Авто оранжевая),
+# заливка — режим производительности (Тихий зелёный, Баланс синий, Турбо красный — тёмные, чтобы
+# не сливаться с рамкой), между ними тёмный зазор. Цвета Breeze.
 GPU_BORDER = {"eco": "#95a5a6", "standard": "#3daee9", "auto": "#f67400"}
-PROFILE_FILL = {"quiet": "#2e7d4f", "balanced": "#2a6f97", "performance": "#a93226"}
-DEFAULT_FILL = "#4d5358"
+PROFILE_FILL = {"quiet": "#24603d", "balanced": "#1f4f6d", "performance": "#7f261d"}
+DEFAULT_FILL = "#3a3f44"
+GAP = "#1b1e20"
 
 
-def make_icon(fill: str, border: str, dim: bool = False, badge: str | None = None) -> QIcon:
-    """Скруглённый квадрат с буквами AH: рамка border, внутри fill. dim — идёт переключение видеокарты,
-    badge — цветная точка в правом верхнем углу (режим «Авто»)."""
+def make_icon(fill: str, border: str, dim: bool = False) -> QIcon:
+    """Скруглённый квадрат с буквами AH: рамка border, тёмный зазор, внутри fill.
+    dim — идёт переключение видеокарты."""
     icon = QIcon()
     for size in (16, 22, 24, 32, 48, 64, 128):
         pm = QPixmap(size, size)
@@ -60,25 +62,19 @@ def make_icon(fill: str, border: str, dim: bool = False, badge: str | None = Non
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(border))
         p.drawRoundedRect(rect, size * 0.22, size * 0.22)
-        w = max(2.0, size * 0.1)
+        w = max(2.0, size * 0.13)
+        inner = rect.adjusted(w, w, -w, -w)
+        p.setBrush(QColor(GAP))
+        p.drawRoundedRect(inner, size * 0.15, size * 0.15)
+        g = max(1.0, size * 0.035)
         p.setBrush(QColor(fill))
-        p.drawRoundedRect(rect.adjusted(w, w, -w, -w), size * 0.14, size * 0.14)
+        p.drawRoundedRect(inner.adjusted(g, g, -g, -g), size * 0.13, size * 0.13)
         font = QFont()
         font.setBold(True)
-        font.setPixelSize(max(7, round(size * 0.47)))
-        font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 92)
+        font.setPixelSize(max(7, round(size * 0.45)))
         p.setFont(font)
         p.setPen(QColor("white"))
         p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "AH")
-        if badge:
-            d = max(9.0, size * 0.36)     # в трее (22 px) — не меньше 9 px, чтобы было видно
-            dot = QRectF(size - d, 0, d, d)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor("#232629"))          # тёмная обводка — точку видно на любой рамке
-            p.drawEllipse(dot)
-            o = max(1.0, d * 0.16)
-            p.setBrush(QColor(badge))
-            p.drawEllipse(dot.adjusted(o, o, -o, -o))
         p.end()
         icon.addPixmap(pm)
     return icon
@@ -148,15 +144,11 @@ class Tray:
         g = s.get("gpu") or {}
         switching = bool(g.get("switching"))
         off = (g.get("target") == "eco") if switching else g.get("state") == "off"
-        # рамка — что реально с видеокартой (серая — отключена, синяя — включена);
-        # в «Авто» вдобавок оранжевая точка: переключается сама по зарядке
-        auto = bool(g.get("auto_eco"))
-        key = (off, auto, profile, switching)
+        gpu_mode = "auto" if g.get("auto_eco") else ("eco" if off else "standard")
+        key = (gpu_mode, profile, switching)
         if key != getattr(self, "_icon_key", None):
             self._icon_key = key
-            self.icon.setIcon(make_icon(PROFILE_FILL.get(profile, DEFAULT_FILL),
-                                        GPU_BORDER["eco" if off else "standard"], switching,
-                                        badge=GPU_BORDER["auto"] if auto else None))
+            self.icon.setIcon(make_icon(PROFILE_FILL.get(profile, DEFAULT_FILL), GPU_BORDER[gpu_mode], switching))
         for p, a in self.mode_actions.items():
             a.setChecked(p == profile)
         g = s.get("gpu") or {}
