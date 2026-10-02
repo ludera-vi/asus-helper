@@ -192,6 +192,7 @@ install_system() {
     sudo install -Dm644 "$SRC/data/org.asushelper.Daemon.conf" /etc/dbus-1/system.d/org.asushelper.Daemon.conf &&
     sudo install -Dm644 "$SRC/data/org.asushelper.policy" /usr/share/polkit-1/actions/org.asushelper.policy &&
     sudo install -Dm644 "$SRC/data/asus-helperd.service" /etc/systemd/system/asus-helperd.service &&
+    sudo install -d -m 755 /etc/asus-helper /var/lib/asus-helper &&
     sudo busctl call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ReloadConfig &&
     sudo systemctl daemon-reload
 }
