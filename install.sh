@@ -135,9 +135,11 @@ if [ -n "$IGPU_PCI" ]; then
     explain "Минус: HDMI (обычно подключён к NVIDIA) не работает, пока настройка включена."
     ask "Рабочий стол на $IGPU_NAME? (рекомендуется)" && DO_KWIN=1
     echo
-    info "${B}Программы по умолчанию на $IGPU_NAME, NVIDIA — через prime-run${R}"
-    explain "Браузер, плеер, мессенджеры не будят NVIDIA. Игры и тяжёлые программы: prime-run steam"
-    ask "Программы на $IGPU_NAME, NVIDIA через prime-run? (рекомендуется)" && DO_APPS=1
+    info "${B}Запрещать программам будить NVIDIA${R} (обычно не нужно)"
+    explain "Нет (по умолчанию): в Стандарте программы и игры сами берут NVIDIA; в Eco всё на $IGPU_NAME."
+    explain "Да: всё всегда на $IGPU_NAME, NVIDIA — только через prime-run. Экономнее в Стандарте,"
+    explain "но игры придётся запускать через prime-run (в Steam: prime-run %command%)."
+    ask "Запрещать программам будить NVIDIA?" N && DO_APPS=1
 fi
 echo
 ask "Продолжить?" || { info "Ничего не изменено"; exit 0; }
@@ -233,11 +235,11 @@ if [ $DO_APPS = 1 ]; then
             echo "__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json"
             echo "__GLX_VENDOR_LIBRARY_NAME=mesa"
             [ -n "$icds" ] && echo "VK_DRIVER_FILES=$icds"
-        } > "$ENVD/91-igpu-apps.conf" &&
-        sudo install -m 755 "$SRC/data/prime-run" "$BIN/prime-run"
+        } > "$ENVD/91-igpu-apps.conf"
     }
-    step "Программы на $IGPU_NAME, NVIDIA через prime-run" install_apps
+    step "Программы по умолчанию на $IGPU_NAME" install_apps
 fi
+step "prime-run — запуск на NVIDIA" sudo install -m 755 "$SRC/data/prime-run" "$BIN/prime-run"
 
 # ---------- 7. рабочий стол ----------
 title "Значок и окно"
