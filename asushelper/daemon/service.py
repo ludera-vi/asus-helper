@@ -52,6 +52,10 @@ XML = f"""
       <arg type="s" direction="in" name="mode"/><arg type="b" direction="in" name="force"/>
     </method>
     <method name="SetGpuAutoEco"><arg type="b" direction="in" name="enabled"/></method>
+    <!-- переключатели BIOS: panel_overdrive, boot_sound -->
+    <method name="SetToggle">
+      <arg type="s" direction="in" name="attr"/><arg type="b" direction="in" name="enabled"/>
+    </method>
     <method name="SetKeyboardBrightness"><arg type="u" direction="in" name="level"/></method>
     <method name="SetAura">
       <arg type="s" direction="in" name="mode"/><arg type="s" direction="in" name="color"/>
@@ -109,6 +113,7 @@ class Service:
             "cpu_temp": hw.cpu_temp(),
             "battery": hw.battery(),
             "power_limits": hw.power_limits(),
+            "toggles": {a: v["value"] == 1 for a in hw.TOGGLE_ATTRS if (v := hw.armoury_attr(a))},
             "gpu": {
                 "supported": gpu.supported(),
                 "state": gpu.state() if gpu.supported() else None,
@@ -343,6 +348,14 @@ class Service:
         self.config.data["gpu"]["auto_eco"] = bool(enabled)
         self.config.save()
         self._auto_eco()
+        self._changed()
+
+    def do_SetToggle(self, attr, enabled):
+        if attr not in hw.TOGGLE_ATTRS or hw.armoury_attr(attr) is None:
+            raise Failed(f"переключателя «{attr}» нет")
+        from . import sysfs
+        if not sysfs.write(f"{hw.ARMOURY}/{attr}/current_value", 1 if enabled else 0):
+            raise Failed("BIOS не принял значение")
         self._changed()
 
     def do_SetKeyboardBrightness(self, level):

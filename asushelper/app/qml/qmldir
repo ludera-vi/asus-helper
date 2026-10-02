@@ -1,0 +1,7 @@
+singleton Theme 1.0 Theme.qml
+Tile 1.0 Tile.qml
+Section 1.0 Section.qml
+ColorSwatch 1.0 ColorSwatch.qml
+FanCurve 1.0 FanCurve.qml
+MainPage 1.0 MainPage.qml
+FansPage 1.0 FansPage.qml
