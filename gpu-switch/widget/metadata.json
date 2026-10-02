@@ -1,0 +1,14 @@
+{
+    "KPlugin": {
+        "Id": "org.vi.gpueco",
+        "Name": "NVIDIA Eco",
+        "Description": "Состояние и включение/выключение NVIDIA через BIOS (gpu-eco)",
+        "Icon": "video-display",
+        "Authors": [{ "Name": "vi" }],
+        "Category": "System Information",
+        "License": "MIT",
+        "Version": "1.0"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=NVIDIA Eco
+Comment=Включение и выключение видеокарты NVIDIA через BIOS
+Icon=video-display
+Exec=sh -c 'notify-send -i video-display "NVIDIA" "$(gpu-eco status 2>&1 | head -3)"'
+Terminal=false
+Categories=System;Settings;
+Actions=off;on;
+
+[Desktop Action off]
+Name=Выключить NVIDIA (Eco)
+Exec=sh -c 'notify-send -i video-display "NVIDIA" "$(gpu-eco off 2>&1 | tail -1)"'
+
+[Desktop Action on]
+Name=Включить NVIDIA (гибрид)
+Exec=sh -c 'notify-send -i video-display "NVIDIA" "$(gpu-eco on 2>&1 | tail -1)"'

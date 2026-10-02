@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>asushero</vendor>
+  <action id="org.asushero.manage">
+    <description>Manage ASUS laptop settings</description>
+    <description xml:lang="ru">Управление настройками ноутбука ASUS</description>
+    <message>Authentication is required to change laptop settings</message>
+    <message xml:lang="ru">Для изменения настроек ноутбука нужен пароль</message>
+    <defaults>
+      <!-- пользователь за ноутбуком — без пароля; по SSH и из других сеансов — пароль администратора -->
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

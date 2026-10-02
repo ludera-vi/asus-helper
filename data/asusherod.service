@@ -1,0 +1,27 @@
+[Unit]
+Description=asushero — режимы, вентиляторы и подсветка ноутбука ASUS
+After=systemd-udevd.service dbus.service
+# Делают то же самое — вместе спорили бы за вентиляторы и режимы
+Conflicts=asusd.service power-profiles-daemon.service
+
+[Service]
+Type=dbus
+BusName=org.asushero.Daemon
+ExecStart=/usr/local/bin/asusherod
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=2
+
+# Нужен доступ на запись к /sys и /dev/hidraw*, остальное закрыто
+ProtectSystem=full
+ReadWritePaths=/etc/asushero
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target
