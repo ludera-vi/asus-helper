@@ -69,9 +69,12 @@ class PowerProfiles:
                              "/org/freedesktop/DBus", None, Gio.DBusSignalFlags.NONE, self._on_name_owner)
 
     def own_names(self) -> None:
+        def acquired(_c, n):
+            log.info("KDE видит режимы через %s", n)
+            # PowerDevil, запущенный раньше демона, запомнил пустой список режимов — рассылаем всё
+            self._emit(list(self._props()))
         for name, _ in NAMES:
-            Gio.bus_own_name_on_connection(self.bus, name, Gio.BusNameOwnerFlags.NONE,
-                                           lambda _c, n: log.info("KDE видит режимы через %s", n),
+            Gio.bus_own_name_on_connection(self.bus, name, Gio.BusNameOwnerFlags.NONE, acquired,
                                            lambda _c, n: log.warning("имя %s занято — работает power-profiles-daemon?", n))
 
     # ---------- свойства ----------
