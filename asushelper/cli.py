@@ -1,24 +1,24 @@
-"""asusludera-cli — управление демоном из терминала.
+"""asus-helper-cli — управление демоном из терминала.
 
-  asusludera-cli                         состояние
-  asusludera-cli profile [quiet|balanced|performance|next]
-  asusludera-cli auto on|off             режим по источнику питания
-  asusludera-cli charge 80               лимит заряда батареи, %
-  asusludera-cli epp PROFILE VALUE|default
-  asusludera-cli fan [PROFILE]           кривые вентиляторов
-  asusludera-cli fan set PROFILE cpu|gpu 30:0,50:10,…   8 точек «°C:%»
-  asusludera-cli fan reset PROFILE cpu|gpu              вернуть кривую BIOS
-  asusludera-cli fan factory             заводские кривые текущего режима
-  asusludera-cli power                   лимиты мощности
-  asusludera-cli power set PROFILE ATTR VALUE|default
-  asusludera-cli power reset PROFILE
-  asusludera-cli gpu                    состояние видеокарты
-  asusludera-cli gpu eco|standard [--force]   выключить / включить NVIDIA (--force закроет программы на ней)
-  asusludera-cli gpu auto on|off        «Оптимальный»: Eco на батарее, NVIDIA от сети
-  asusludera-cli kbd [0-3]              яркость подсветки клавиатуры
-  asusludera-cli aura static|breathe|cycle|strobe [#RRGGBB] [#RRGGBB] [slow|normal|fast]
-  asusludera-cli aura power awake,boot,sleep,shutdown   когда светиться (перечислить нужное)
-  asusludera-cli import-asusd            перенести настройки из /etc/asusd (root, демон остановлен)
+  asus-helper-cli                         состояние
+  asus-helper-cli profile [quiet|balanced|performance|next]
+  asus-helper-cli auto on|off             режим по источнику питания
+  asus-helper-cli charge 80               лимит заряда батареи, %
+  asus-helper-cli epp PROFILE VALUE|default
+  asus-helper-cli fan [PROFILE]           кривые вентиляторов
+  asus-helper-cli fan set PROFILE cpu|gpu 30:0,50:10,…   8 точек «°C:%»
+  asus-helper-cli fan reset PROFILE cpu|gpu              вернуть кривую BIOS
+  asus-helper-cli fan factory             заводские кривые текущего режима
+  asus-helper-cli power                   лимиты мощности
+  asus-helper-cli power set PROFILE ATTR VALUE|default
+  asus-helper-cli power reset PROFILE
+  asus-helper-cli gpu                    состояние видеокарты
+  asus-helper-cli gpu eco|standard [--force]   выключить / включить NVIDIA (--force закроет программы на ней)
+  asus-helper-cli gpu auto on|off        «Оптимальный»: Eco на батарее, NVIDIA от сети
+  asus-helper-cli kbd [0-3]              яркость подсветки клавиатуры
+  asus-helper-cli aura static|breathe|cycle|strobe [#RRGGBB] [#RRGGBB] [slow|normal|fast]
+  asus-helper-cli aura power awake,boot,sleep,shutdown   когда светиться (перечислить нужное)
+  asus-helper-cli import-asusd            перенести настройки из /etc/asusd (root, демон остановлен)
 """
 import json
 import re
@@ -57,7 +57,7 @@ class Client:
         except GLib.Error as e:
             msg = re.sub(r"^GDBus\.Error:[\w.]+:\s*", "", e.message)
             if "ServiceUnknown" in e.message or "was not provided" in e.message:
-                msg = "демон asusluderad не запущен (systemctl status asusluderad)"
+                msg = "демон asus-helperd не запущен (systemctl status asus-helperd)"
             raise Error(msg) from None
         v = r.unpack()
         return v[0] if v else None
@@ -117,19 +117,19 @@ def cmd_profile(cl, args):
 
 def cmd_auto(cl, args):
     if not args or args[0] not in ("on", "off"):
-        raise Error("asusludera-cli auto on|off")
+        raise Error("asus-helper-cli auto on|off")
     cl.call("SetAutoProfile", "b", args[0] == "on")
 
 
 def cmd_charge(cl, args):
     if not args or not args[0].isdigit():
-        raise Error("asusludera-cli charge 20…100")
+        raise Error("asus-helper-cli charge 20…100")
     cl.call("SetChargeLimit", "u", int(args[0]))
 
 
 def cmd_epp(cl, args):
     if len(args) != 2:
-        raise Error("asusludera-cli epp PROFILE VALUE|default")
+        raise Error("asus-helper-cli epp PROFILE VALUE|default")
     cl.call("SetEpp", "ss", args[0], "" if args[1] == "default" else args[1])
 
 
@@ -185,7 +185,7 @@ def cmd_import(_cl, _args):
     print("Перенесено в", cfg.path)
     for line in done:
         print("  " + line)
-    print("Если демон запущен: sudo systemctl reload asusluderad")
+    print("Если демон запущен: sudo systemctl reload asus-helperd")
 
 
 GPU_NAMES = {"off": "выключена (Eco)", "suspended": "включена, спит", "active": "включена, работает",
@@ -209,7 +209,7 @@ def cmd_gpu(cl, args):
             if not g["switching"]:
                 if g["error"]:
                     raise Error(g["error"] + ("" if "--force" in args or "используют" not in g["error"]
-                                              else "\nЗакрыть их и выключить: asusludera-cli gpu eco --force"))
+                                              else "\nЗакрыть их и выключить: asus-helper-cli gpu eco --force"))
                 print(GPU_NAMES.get(g["state"], g["state"]))
                 return
         raise Error("переключение не закончилось за 30 с — смотри журнал демона")
@@ -226,7 +226,7 @@ def cmd_kbd(cl, args):
     elif args[0].isdigit():
         cl.call("SetKeyboardBrightness", "u", int(args[0]))
     else:
-        raise Error("asusludera-cli kbd 0…3")
+        raise Error("asus-helper-cli kbd 0…3")
 
 
 def cmd_aura(cl, args):

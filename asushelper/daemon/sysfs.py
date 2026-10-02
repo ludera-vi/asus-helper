@@ -1,6 +1,6 @@
 """Чтение и запись файлов sysfs.
 
-Все пути проходят через path(): переменная окружения ASUSLUDERA_SYSROOT подменяет корень,
+Все пути проходят через path(): переменная окружения ASUSHELPER_SYSROOT подменяет корень,
 чтобы тесты работали на поддельном дереве sysfs, не трогая железо.
 """
 import glob
@@ -9,7 +9,7 @@ import os
 
 log = logging.getLogger(__name__)
 
-ROOT = os.environ.get("ASUSLUDERA_SYSROOT", "")
+ROOT = os.environ.get("ASUSHELPER_SYSROOT", "")
 
 
 def path(p: str) -> str:

@@ -1,4 +1,4 @@
-# AsusLudera
+# Asus-helper
 
 Своя замена asusd / asusctl / rog-control-center для ASUS ROG Zephyrus G16 GU605MZ, по мотивам
 G-Helper. Режимы, вентиляторы, лимиты мощности, видеокарта, подсветка — одним приложением.
@@ -6,24 +6,24 @@ G-Helper. Режимы, вентиляторы, лимиты мощности, �
 ## Устройство
 
 ```
-asusluderad (root, systemd)          — единственный, кто пишет в sysfs и HID
+asus-helperd (root, systemd)          — единственный, кто пишет в sysfs и HID
   ├─ режимы + кривые вентиляторов + лимиты мощности + EPP, автоматика сеть/батарея
-  ├─ D-Bus org.asusludera.Daemon (права — polkit org.asusludera.manage)
+  ├─ D-Bus org.asushelper.Daemon (права — polkit org.asushelper.manage)
   ├─ видеокарта: Eco / Стандарт / Оптимальный (бывший gpu-eco)
   ├─ подсветка клавиатуры: яркость и Aura по HID (вместо asusd)
   └─ эмуляция power-profiles-daemon → KDE видит режимы (виджет батареи)
-asusludera-agent (сеанс пользователя)  — карточки KDE: режим, подсветка; уведомления о видеокарте (бывший asus-osd)
-asusludera-cli                       — управление из терминала
-asusludera (Qt/QML, в трее)          — интерфейс (этап 5)
+asus-helper-agent (сеанс пользователя)  — карточки KDE: режим, подсветка; уведомления о видеокарте (бывший asus-osd)
+asus-helper-cli                       — управление из терминала
+asushelper (Qt/QML, в трее)          — интерфейс (этап 5)
 ```
 
 | Каталог | Что |
 |---|---|
-| `asusludera/daemon/` | демон: `hardware.py` (железо), `modes.py` (что и когда применять), `service.py` (D-Bus), `ppd.py` (для KDE) |
-| `asusludera/cli.py` | `asusludera-cli` |
-| `asusludera/asusd_import.py` | перенос настроек из `/etc/asusd` |
+| `asushelper/daemon/` | демон: `hardware.py` (железо), `modes.py` (что и когда применять), `service.py` (D-Bus), `ppd.py` (для KDE) |
+| `asushelper/cli.py` | `asus-helper-cli` |
+| `asushelper/asusd_import.py` | перенос настроек из `/etc/asusd` |
 | `data/` | systemd, D-Bus, polkit |
-| `gpu-switch/`, `lighting_keyboard/` | прежние программы (переносятся в asusludera на этапах 3–5) |
+| `gpu-switch/`, `lighting_keyboard/` | прежние программы (переносятся в asushelper на этапах 3–5) |
 
 ## Этапы
 
@@ -39,8 +39,8 @@ asusludera (Qt/QML, в трее)          — интерфейс (этап 5)
 
 ```bash
 sudo ./dev-run.sh        # снимок snapper → asusd на паузу → демон в терминале; Ctrl+C — вернуть asusd
-python3 -m asusludera.agent  # второй терминал: карточки KDE (asus-osd на это время остановить)
-python3 -m asusludera.cli    # третий терминал
+python3 -m asushelper.agent  # второй терминал: карточки KDE (asus-osd на это время остановить)
+python3 -m asushelper.cli    # третий терминал
 ```
 
 ## Тесты
@@ -48,4 +48,4 @@ python3 -m asusludera.cli    # третий терминал
 ```bash
 python3 -m unittest discover -s tests -t .
 ```
-Работают на поддельном sysfs (`ASUSLUDERA_SYSROOT`), железо не трогают.
+Работают на поддельном sysfs (`ASUSHELPER_SYSROOT`), железо не трогают.

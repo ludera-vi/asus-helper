@@ -1,4 +1,4 @@
-"""asusludera-agent — помощник в сеансе пользователя (замена asus-osd).
+"""asus-helper-agent — помощник в сеансе пользователя (замена asus-osd).
 
 Слушает демон на системной шине и показывает карточки KDE:
   • смена режима (Fn+F5, автоматика сеть/батарея, приложение) — карточка режима;
@@ -17,7 +17,7 @@ from gi.repository import Gio, GLib
 
 from . import BUS_NAME, INTERFACE, OBJECT_PATH
 
-log = logging.getLogger("asusludera-agent")
+log = logging.getLogger("asus-helper-agent")
 
 PPD_NAMES = {"quiet": "power-saver", "balanced": "balanced", "performance": "performance"}
 GPU_TEXT = {"off": "NVIDIA выключена (Eco)", "suspended": "NVIDIA включена", "active": "NVIDIA включена"}
@@ -56,7 +56,7 @@ class Agent:
         # replaces_id — новое уведомление заменяет прошлое, а не копится
         self.session.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                           "org.freedesktop.Notifications", "Notify",
-                          GLib.Variant("(susssasa{sv}i)", ("AsusLudera", self.notification_id, icon, title, text,
+                          GLib.Variant("(susssasa{sv}i)", ("Asus-helper", self.notification_id, icon, title, text,
                                                            [], {}, 5000)),
                           None, Gio.DBusCallFlags.NONE, -1, None, done)
 

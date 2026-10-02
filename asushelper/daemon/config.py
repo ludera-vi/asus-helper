@@ -1,6 +1,6 @@
-"""Настройки демона: /etc/asusludera/config.json.
+"""Настройки демона: /etc/asus-helper/config.json.
 
-Файл можно править руками (потом: systemctl reload asusluderad), но обычно его меняет демон
+Файл можно править руками (потом: systemctl reload asus-helperd), но обычно его меняет демон
 по командам из приложения. Сохраняется атомарно, чтобы сбой питания не оставил пустой файл.
 """
 import copy
@@ -12,7 +12,7 @@ from .. import FANS, PROFILES
 
 log = logging.getLogger(__name__)
 
-CONFIG_DIR = os.environ.get("ASUSLUDERA_CONFIG_DIR", "/etc/asusludera")
+CONFIG_DIR = os.environ.get("ASUSHELPER_CONFIG_DIR", "/etc/asus-helper")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 DEFAULT_EPP = {"quiet": "power", "balanced": "balance_power", "performance": "performance"}

@@ -1,8 +1,8 @@
-"""D-Bus API демона: org.asusludera.Daemon на системной шине.
+"""D-Bus API демона: org.asushelper.Daemon на системной шине.
 
 Сложные данные (состояние, настройки) передаются строкой JSON: так их одинаково легко читать
 из QML, Python и busctl. Методы, которые что-то меняют, проверяют право через polkit
-(действие org.asusludera.manage: активному пользователю — без пароля).
+(действие org.asushelper.manage: активному пользователю — без пароля).
 """
 import json
 import logging
@@ -18,10 +18,10 @@ from .modes import Modes
 
 log = logging.getLogger(__name__)
 
-POLKIT_ACTION = "org.asusludera.manage"
+POLKIT_ACTION = "org.asushelper.manage"
 # False только при разработке на сессионной шине (там нет polkit)
 USE_POLKIT = True
-ERROR = "org.asusludera.Error"
+ERROR = "org.asushelper.Error"
 
 XML = f"""
 <node>
@@ -77,7 +77,7 @@ READ_ONLY = {"GetState", "GetConfig"}
 
 
 class Failed(Exception):
-    """Ошибка для клиента: текст уходит ему как org.asusludera.Error.Failed."""
+    """Ошибка для клиента: текст уходит ему как org.asushelper.Error.Failed."""
 
 
 class Service:

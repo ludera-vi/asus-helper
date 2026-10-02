@@ -1,7 +1,7 @@
-"""asusluderad — системный демон asusludera. Запуск: python -m asusludera.daemon [--session-bus]
+"""asus-helperd — системный демон asushelper. Запуск: python -m asushelper.daemon [--session-bus]
 
 --session-bus — для разработки: работать на сессионной шине без root, вместе с
-ASUSLUDERA_SYSROOT (поддельный sysfs) и ASUSLUDERA_CONFIG_DIR.
+ASUSHELPER_SYSROOT (поддельный sysfs) и ASUSHELPER_CONFIG_DIR.
 """
 import argparse
 import os
@@ -28,7 +28,7 @@ from .ppd import PowerProfiles
 from . import service as service_mod
 from .service import Service
 
-log = logging.getLogger("asusluderad")
+log = logging.getLogger("asus-helperd")
 
 ASUSD = "xyz.ljones.Asusd"
 
@@ -43,7 +43,7 @@ def name_has_owner(bus, name) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(prog="asusluderad")
+    ap = argparse.ArgumentParser(prog="asus-helperd")
     ap.add_argument("--session-bus", action="store_true", help="сессионная шина (разработка)")
     ap.add_argument("--no-ppd", action="store_true", help="не выдавать себя за power-profiles-daemon")
     ap.add_argument("--debug", action="store_true")
@@ -52,7 +52,7 @@ def main() -> int:
     # systemd добавляет время сам — в журнал только уровень и текст
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s", stream=sys.stdout)
-    log.info("asusluderad %s", __version__)
+    log.info("asus-helperd %s", __version__)
 
     bus = Gio.bus_get_sync(Gio.BusType.SESSION if args.session_bus else Gio.BusType.SYSTEM)
     if not args.session_bus and name_has_owner(bus, ASUSD):
@@ -87,7 +87,7 @@ def main() -> int:
         try:
             r, fds = bus.call_with_unix_fd_list_sync(
                 "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "Inhibit",
-                GLib.Variant("(ssss)", ("sleep", "AsusLudera", "подготовка видеокарты ко сну", "delay")),
+                GLib.Variant("(ssss)", ("sleep", "Asus-helper", "подготовка видеокарты ко сну", "delay")),
                 GLib.VariantType("(h)"), Gio.DBusCallFlags.NONE, -1, None, None)
             inhibitor.append(fds.get(r.unpack()[0]))
         except GLib.Error as e:
@@ -116,7 +116,7 @@ def main() -> int:
             ppd.own_names()
 
     def on_name_lost(_c, name):
-        log.error("не удалось занять имя %s на шине (уже запущен другой asusluderad?)", name)
+        log.error("не удалось занять имя %s на шине (уже запущен другой asus-helperd?)", name)
         loop.quit()
 
     Gio.bus_own_name_on_connection(bus, BUS_NAME, Gio.BusNameOwnerFlags.NONE, on_name_acquired, on_name_lost)

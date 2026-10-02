@@ -1,20 +1,20 @@
 [Unit]
-Description=asusludera — режимы, вентиляторы и подсветка ноутбука ASUS
+Description=asushelper — режимы, вентиляторы и подсветка ноутбука ASUS
 After=systemd-udevd.service dbus.service
 # Делают то же самое — вместе спорили бы за вентиляторы и режимы
 Conflicts=asusd.service power-profiles-daemon.service
 
 [Service]
 Type=dbus
-BusName=org.asusludera.Daemon
-ExecStart=/usr/local/bin/asusluderad
+BusName=org.asushelper.Daemon
+ExecStart=/usr/local/bin/asus-helperd
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=2
 
 # Нужен доступ на запись к /sys и /dev/hidraw*, остальное закрыто
 ProtectSystem=full
-ReadWritePaths=/etc/asusludera
+ReadWritePaths=/etc/asus-helper
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes
