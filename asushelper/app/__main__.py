@@ -37,14 +37,16 @@ PROFILE_NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance
 GPU_NAMES = {"off": "выключена (Eco)", "suspended": "спит", "active": "работает", "missing": "без драйвера"}
 
 
-# Значок: рамка — режим видеокарты, заливка — режим производительности (цвета Breeze)
+# Значок: рамка — видеокарта (серая — NVIDIA отключена, синяя — включена), оранжевая точка — «Авто»,
+# заливка — режим производительности (цвета Breeze)
 GPU_BORDER = {"eco": "#95a5a6", "standard": "#3daee9", "auto": "#f67400"}
 PROFILE_FILL = {"quiet": "#2e7d4f", "balanced": "#2a6f97", "performance": "#a93226"}
 DEFAULT_FILL = "#4d5358"
 
 
-def make_icon(fill: str, border: str, dim: bool = False) -> QIcon:
-    """Скруглённый квадрат с буквами AH: рамка border, внутри fill. dim — идёт переключение видеокарты."""
+def make_icon(fill: str, border: str, dim: bool = False, badge: str | None = None) -> QIcon:
+    """Скруглённый квадрат с буквами AH: рамка border, внутри fill. dim — идёт переключение видеокарты,
+    badge — цветная точка в правом верхнем углу (режим «Авто»)."""
     icon = QIcon()
     for size in (16, 22, 24, 32, 48, 64, 128):
         pm = QPixmap(size, size)
@@ -68,6 +70,15 @@ def make_icon(fill: str, border: str, dim: bool = False) -> QIcon:
         p.setFont(font)
         p.setPen(QColor("white"))
         p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "AH")
+        if badge:
+            d = max(9.0, size * 0.36)     # в трее (22 px) — не меньше 9 px, чтобы было видно
+            dot = QRectF(size - d, 0, d, d)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#232629"))          # тёмная обводка — точку видно на любой рамке
+            p.drawEllipse(dot)
+            o = max(1.0, d * 0.16)
+            p.setBrush(QColor(badge))
+            p.drawEllipse(dot.adjusted(o, o, -o, -o))
         p.end()
         icon.addPixmap(pm)
     return icon
@@ -137,11 +148,15 @@ class Tray:
         g = s.get("gpu") or {}
         switching = bool(g.get("switching"))
         off = (g.get("target") == "eco") if switching else g.get("state") == "off"
-        gpu_mode = "auto" if g.get("auto_eco") else ("eco" if off else "standard")
-        key = (gpu_mode, profile, switching)
+        # рамка — что реально с видеокартой (серая — отключена, синяя — включена);
+        # в «Авто» вдобавок оранжевая точка: переключается сама по зарядке
+        auto = bool(g.get("auto_eco"))
+        key = (off, auto, profile, switching)
         if key != getattr(self, "_icon_key", None):
             self._icon_key = key
-            self.icon.setIcon(make_icon(PROFILE_FILL.get(profile, DEFAULT_FILL), GPU_BORDER[gpu_mode], switching))
+            self.icon.setIcon(make_icon(PROFILE_FILL.get(profile, DEFAULT_FILL),
+                                        GPU_BORDER["eco" if off else "standard"], switching,
+                                        badge=GPU_BORDER["auto"] if auto else None))
         for p, a in self.mode_actions.items():
             a.setChecked(p == profile)
         g = s.get("gpu") or {}
