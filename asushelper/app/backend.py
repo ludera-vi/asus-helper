@@ -6,6 +6,8 @@ D-Bus — через Gio: Qt в Linux крутит цикл событий GLib,
 """
 import json
 import logging
+import os
+from pathlib import Path
 
 from gi.repository import Gio, GLib
 from PySide6.QtCore import Property, QObject, QProcess, QTimer, Signal, Slot
@@ -16,6 +18,15 @@ from . import display
 log = logging.getLogger(__name__)
 
 POLL_MS = 2000
+# настройки самого приложения (не демона): то, что делает сеанс пользователя
+SETTINGS = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "asus-helper" / "app.json"
+
+
+def load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS.read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 class Backend(QObject):
@@ -25,6 +36,7 @@ class Backend(QObject):
     nvidiaChanged = Signal()
     connectedChanged = Signal()
     activeChanged = Signal()
+    screenAutoChanged = Signal()
     factoryCurves = Signal("QVariant")   # ответ на requestFactoryCurves
     message = Signal(str, bool)          # текст, ошибка ли
 
@@ -37,6 +49,8 @@ class Backend(QObject):
         self._nvidia = {}
         self._connected = False
         self._active = False
+        self._settings = load_settings()
+        self._last_ac = None
         self._timer = QTimer(self, interval=POLL_MS, timeout=self.refresh)
         bus.signal_subscribe(BUS_NAME, INTERFACE, "StateChanged", OBJECT_PATH, None,
                              Gio.DBusSignalFlags.NONE, self._on_state_signal)
@@ -53,6 +67,7 @@ class Backend(QObject):
     def _get_nvidia(self): return self._nvidia
     def _get_connected(self): return self._connected
     def _get_active(self): return self._active
+    def _get_screen_auto(self): return bool(self._settings.get("screen_auto", False))
 
     def _set_active(self, v: bool):
         """Окно открыто — опрашиваем датчики; закрыто — только сигналы демона."""
@@ -73,6 +88,7 @@ class Backend(QObject):
     nvidia = Property("QVariant", _get_nvidia, notify=nvidiaChanged)
     connected = Property(bool, _get_connected, notify=connectedChanged)
     active = Property(bool, _get_active, _set_active, notify=activeChanged)
+    screenAuto = Property(bool, _get_screen_auto, notify=screenAutoChanged)
 
     # ---------- D-Bus ----------
     def _call(self, method: str, sig: str | None = None, args: tuple = (), done=None, quiet=False):
@@ -100,6 +116,10 @@ class Backend(QObject):
     def _set_state(self, s: dict):
         self._state = s
         self.stateChanged.emit()
+        if s.get("ac") is not None and s["ac"] != self._last_ac:
+            self._last_ac = s["ac"]
+            if self._get_screen_auto():
+                self._screen_auto_apply()
         if self._active and (s.get("gpu") or {}).get("state") == "active":
             self._poll_nvidia()
         elif self._nvidia:
@@ -182,6 +202,30 @@ class Backend(QObject):
     def _on_display(self, info: dict):
         self._display = info
         self.displayChanged.emit()
+
+    @Slot(bool)
+    def setScreenAuto(self, v):
+        self._settings["screen_auto"] = bool(v)
+        try:
+            SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+            SETTINGS.write_text(json.dumps(self._settings, indent=2))
+        except OSError as e:
+            log.warning("не сохранить %s: %s", SETTINGS, e)
+        self.screenAutoChanged.emit()
+        if v:
+            self._screen_auto_apply()
+
+    def _screen_auto_apply(self):
+        """Авто, как в G-Helper: от сети — максимальная частота, на батарее — минимальная."""
+        def got(info):
+            self._on_display(info)
+            rates = info.get("rates") or []
+            if len(rates) > 1 and self._last_ac is not None:
+                want = rates[-1] if self._last_ac else rates[0]
+                if info.get("hz") != want:
+                    log.info("экран авто: %s Гц", want)
+                    self.setRefreshRate(want)
+        display.query(got)
 
     @Slot(int)
     def setRefreshRate(self, hz):

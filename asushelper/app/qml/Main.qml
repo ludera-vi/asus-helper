@@ -40,6 +40,9 @@ Window {
 
     // после открытия окно ещё не получило фокус — не закрываем его сразу
     Timer { id: keepOpen; interval: 400 }
+    function openFans() {
+        if (stack.depth === 1) stack.push(scrolled.createObject(stack, { page: fansPage }))
+    }
     function toggle() {
         if (visible) { visible = false; return }
         keepOpen.restart()
@@ -143,7 +146,7 @@ Window {
         }
     }
 
-    Component { id: mainPage; MainPage { onOpenFans: stack.push(scrolled.createObject(stack, { page: fansPage })) } }
+    Component { id: mainPage; MainPage { onOpenFans: win.openFans() } }
     Component { id: fansPage; FansPage { onBack: stack.pop() } }
 
     // высота содержимого текущей страницы — по ней окно подбирает свою высоту

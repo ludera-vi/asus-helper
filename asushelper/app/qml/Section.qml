@@ -1,4 +1,4 @@
-// Раздел окна: заголовок с иконкой и сводкой справа, под ним содержимое.
+// Раздел окна, как в G-Helper: «Режим: Турбо» слева, датчики справа, под ними плитки.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
@@ -8,8 +8,9 @@ ColumnLayout {
     id: section
 
     property string title: ""
+    property string value: ""           // текущее значение после двоеточия: «Режим: Тихий»
     property string iconName: ""
-    property string info: ""            // справа от заголовка: «41 °C · 1900 об/мин»
+    property string info: ""            // справа: «CPU 46 °C · 1900 об/мин»
     property color infoColor: Kirigami.Theme.textColor
     default property alias content: body.data
 
@@ -18,23 +19,32 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
+        Layout.bottomMargin: Kirigami.Units.smallSpacing / 2
         spacing: Kirigami.Units.smallSpacing
         Kirigami.Icon {
             implicitWidth: Kirigami.Units.iconSizes.small
             implicitHeight: Kirigami.Units.iconSizes.small
             source: section.iconName
+            isMask: section.iconName.indexOf("-symbolic") !== -1
+            color: Kirigami.Theme.textColor
             visible: section.iconName !== ""
         }
-        Kirigami.Heading {
-            level: 4
-            text: section.title
+        QQC2.Label {
+            text: section.title + (section.value ? ":" : "")
+            font.weight: Font.DemiBold
+        }
+        QQC2.Label {
+            visible: section.value !== ""
+            text: section.value
+            font.weight: Font.DemiBold
+            color: Kirigami.Theme.highlightColor
         }
         Item { Layout.fillWidth: true }
         QQC2.Label {
             text: section.info
             color: section.infoColor
             font: Kirigami.Theme.smallFont
-            opacity: 0.85
+            opacity: 0.8
         }
     }
 

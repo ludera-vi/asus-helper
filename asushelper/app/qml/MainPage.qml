@@ -1,4 +1,5 @@
-// Главная страница: режим, видеокарта, экран, клавиатура, батарея — всё на одном экране, как в G-Helper.
+// Главная страница в раскладке G-Helper: в каждом разделе ряд плиток, в заголовке — что выбрано
+// и что с датчиками. Редкие настройки (скорость эффекта, когда светиться) — во всплывающих окнах.
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
@@ -14,17 +15,20 @@ ColumnLayout {
     readonly property var gpu: st.gpu || {}
     readonly property var kbd: st.keyboard || {}
     readonly property var bat: st.battery || {}
+    readonly property var fans: st.fans || {}
     readonly property var disp: backend.display || {}
     readonly property var nv: backend.nvidia || {}
+    readonly property var toggles: st.toggles || {}
 
-    spacing: Kirigami.Units.largeSpacing
+    spacing: Kirigami.Units.largeSpacing * 1.5
 
     // ---------- режим ----------
     Section {
         title: "Режим"
+        value: Theme.profileName(page.st.profile)
         iconName: "speedometer-symbolic"
-        info: (page.st.cpu_temp !== undefined && page.st.cpu_temp !== null ? Math.round(page.st.cpu_temp) + " °C" : "")
-              + (page.st.fans ? "  ·  " + page.st.fans.cpu + " / " + page.st.fans.gpu + " об/мин" : "")
+        info: (page.st.cpu_temp != null ? "CPU " + Math.round(page.st.cpu_temp) + " °C" : "")
+              + (page.fans.cpu != null ? "  ·  " + page.fans.cpu + " об/мин" : "")
 
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
@@ -33,12 +37,17 @@ ColumnLayout {
                 Tile {
                     required property var modelData
                     text: modelData.name
-                    subtitle: modelData.hint
                     iconName: modelData.icon
                     accent: Theme.profileColor(modelData.id)
                     selected: page.st.profile === modelData.id
                     onClicked: backend.setProfile(modelData.id)
                 }
+            }
+            Tile {
+                text: "Вентиляторы"
+                subtitle: "и мощность"
+                iconName: Qt.resolvedUrl("icons/fan-symbolic.svg")
+                onClicked: page.openFans()
             }
         }
 
@@ -50,35 +59,26 @@ ColumnLayout {
                 checked: !!page.st.auto_profile
                 onToggled: backend.setAutoProfile(checked)
                 QQC2.ToolTip.visible: hovered
-                QQC2.ToolTip.text: "При подключении зарядки и от батареи включать режим, выбранный для этого питания"
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                QQC2.ToolTip.text: "Подключили зарядку или отключили — включается режим, который ты выбирал для этого питания"
             }
+            Item { Layout.fillWidth: true }
             QQC2.Label {
-                Layout.fillWidth: true
                 visible: autoProfile.checked
-                text: "сеть: " + Theme.profileName(page.st.profile_on_ac) + " · батарея: " + Theme.profileName(page.st.profile_on_battery)
+                text: "от сети: " + Theme.profileName(page.st.profile_on_ac) + "  ·  от батареи: " + Theme.profileName(page.st.profile_on_battery)
                 font: Kirigami.Theme.smallFont
                 opacity: 0.7
-                elide: Text.ElideRight
             }
         }
-
-        QQC2.Button {
-            Layout.fillWidth: true
-            text: "Вентиляторы и мощность"
-            icon.name: "go-next"
-            LayoutMirroring.enabled: true     // стрелка справа
-            onClicked: page.openFans()
-        }
     }
-
-    Kirigami.Separator { Layout.fillWidth: true }
 
     // ---------- видеокарта ----------
     Section {
         visible: !!page.gpu.supported
         title: "Видеокарта"
-        iconName: "video-display"
-        info: Theme.gpuInfo(page.gpu, page.nv)
+        value: page.gpu.auto_eco ? "Оптимальный" : page.gpu.state === "off" ? "Eco" : "Стандарт"
+        iconName: Qt.resolvedUrl("icons/gpu-symbolic.svg")
+        info: Theme.gpuInfo(page.gpu, page.nv) + (page.fans.gpu != null ? "  ·  " + page.fans.gpu + " об/мин" : "")
         infoColor: page.gpu.state === "active" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
 
         RowLayout {
@@ -87,91 +87,104 @@ ColumnLayout {
                 text: "Eco"
                 subtitle: "NVIDIA выключена"
                 iconName: "battery-profile-powersave-symbolic"
-                accent: Kirigami.Theme.positiveTextColor
+                accent: Theme.positive
                 selected: !page.gpu.auto_eco && page.gpu.state === "off"
-                busy: page.gpu.switching && page.gpu.state !== "off"
-                enabled: !page.gpu.switching && page.gpu.mux_hybrid
+                busy: !!page.gpu.switching && page.gpu.state !== "off"
+                enabled: !page.gpu.switching && !!page.gpu.mux_hybrid
                 onClicked: backend.setGpuMode("eco", false)
             }
             Tile {
                 text: "Стандарт"
-                subtitle: "гибрид"
+                subtitle: "iGPU + NVIDIA"
                 iconName: "monitor-symbolic"
-                accent: Kirigami.Theme.highlightColor
+                accent: Theme.highlight
                 selected: !page.gpu.auto_eco && page.gpu.state !== "off"
-                busy: page.gpu.switching && page.gpu.state === "off"
+                busy: !!page.gpu.switching && page.gpu.state === "off"
                 enabled: !page.gpu.switching
                 onClicked: backend.setGpuMode("standard", false)
             }
             Tile {
                 text: "Оптимальный"
                 subtitle: "Eco на батарее"
-                iconName: "battery-good-symbolic"
-                accent: Kirigami.Theme.neutralTextColor
+                iconName: "automated-tasks-symbolic"
+                accent: Theme.neutral
                 selected: !!page.gpu.auto_eco
-                enabled: !page.gpu.switching && page.gpu.mux_hybrid
+                enabled: !page.gpu.switching && !!page.gpu.mux_hybrid
                 onClicked: backend.setGpuAutoEco(true)
             }
         }
 
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: !!page.gpu.error && !page.gpu.switching
+            type: Kirigami.MessageType.Warning
+            text: page.gpu.error || ""
+            actions: [
+                Kirigami.Action {
+                    visible: (page.gpu.error || "").indexOf("используют") !== -1
+                    text: "Закрыть их и выключить"
+                    icon.name: "process-stop-symbolic"
+                    onTriggered: backend.setGpuMode("eco", true)
+                }
+            ]
+        }
         QQC2.Label {
             Layout.fillWidth: true
-            visible: text !== ""
-            wrapMode: Text.Wrap
+            visible: !page.gpu.error && (page.gpu.holders || []).length > 0
+            text: "Держат NVIDIA: " + (page.gpu.holders || []).join(", ")
             font: Kirigami.Theme.smallFont
-            color: page.gpu.error ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
-            opacity: page.gpu.error ? 1 : 0.7
-            text: page.gpu.error ? page.gpu.error
-                : page.gpu.holders && page.gpu.holders.length ? "Используют: " + page.gpu.holders.join(", ")
-                : ""
-        }
-        QQC2.Button {
-            Layout.fillWidth: true
-            visible: !!page.gpu.error && page.gpu.error.indexOf("используют") !== -1 && !page.gpu.switching
-            text: "Закрыть эти программы и выключить"
-            icon.name: "process-stop"
-            onClicked: backend.setGpuMode("eco", true)
+            opacity: 0.7
+            elide: Text.ElideRight
         }
     }
-
-    Kirigami.Separator { Layout.fillWidth: true; visible: !!page.gpu.supported }
 
     // ---------- экран ----------
     Section {
         visible: (page.disp.rates || []).length > 1
         title: "Экран"
-        iconName: "preferences-desktop-display"
-        info: page.disp.hz ? page.disp.hz + " Гц" : ""
+        value: page.disp.hz ? page.disp.hz + " Гц" + (page.toggles.panel_overdrive ? " + OD" : "") : ""
+        iconName: "monitor-symbolic"
+        info: backend.screenAuto && page.disp.rates ? "авто: " + page.disp.rates[0] + " на батарее, " + page.disp.rates[1] + " от сети" : ""
 
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
+            Tile {
+                compact: true
+                text: "Авто"
+                selected: backend.screenAuto
+                onClicked: backend.setScreenAuto(true)
+            }
             Repeater {
                 model: page.disp.rates || []
                 Tile {
                     required property int modelData
-                    required property int index
+                    compact: true
                     text: modelData + " Гц"
-                    subtitle: index === 0 ? "экономнее" : "плавнее"
-                    selected: page.disp.hz === modelData
-                    onClicked: backend.setRefreshRate(modelData)
+                    selected: !backend.screenAuto && page.disp.hz === modelData
+                    onClicked: { backend.setScreenAuto(false); backend.setRefreshRate(modelData) }
                 }
             }
-        }
-        QQC2.Switch {
-            visible: page.st.toggles && page.st.toggles.panel_overdrive !== undefined
-            text: "Overdrive (быстрее отклик матрицы)"
-            checked: !!(page.st.toggles && page.st.toggles.panel_overdrive)
-            onToggled: backend.setToggle("panel_overdrive", checked)
+            Tile {
+                compact: true
+                visible: page.toggles.panel_overdrive !== undefined
+                text: "Overdrive"
+                accent: Theme.neutral
+                selected: !!page.toggles.panel_overdrive
+                onClicked: backend.setToggle("panel_overdrive", !page.toggles.panel_overdrive)
+                QQC2.ToolTip.visible: hovered
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                QQC2.ToolTip.text: "Разгон матрицы: быстрее отклик, меньше шлейфов в играх"
+            }
         }
     }
-
-    Kirigami.Separator { Layout.fillWidth: true }
 
     // ---------- клавиатура ----------
     Section {
         visible: page.kbd.mode !== undefined
-        title: "Подсветка клавиатуры"
-        iconName: "input-keyboard-brightness"
+        title: "Клавиатура"
+        value: (Theme.auraModes.find(m => m.id === page.kbd.mode) || {}).name || ""
+        iconName: "input-keyboard-symbolic"
+        info: page.kbd.brightness === 0 ? "подсветка выключена" : ""
 
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
@@ -180,7 +193,9 @@ ColumnLayout {
                 Tile {
                     required property string modelData
                     required property int index
+                    compact: true
                     text: modelData
+                    accent: page.kbd.color || Theme.highlight
                     selected: page.kbd.brightness === index
                     onClicked: backend.setKeyboardBrightness(index)
                 }
@@ -189,99 +204,54 @@ ColumnLayout {
 
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
-            Repeater {
-                model: Theme.auraModes
-                Tile {
-                    required property var modelData
-                    text: modelData.name
-                    selected: page.kbd.mode === modelData.id
-                    accent: page.kbd.color || Kirigami.Theme.highlightColor
-                    onClicked: backend.setAura(modelData.id, page.kbd.color, page.kbd.color2, page.kbd.speed)
-                }
+            QQC2.ComboBox {
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                model: Theme.auraModes.map(m => m.name)
+                currentIndex: Math.max(0, Theme.auraModes.findIndex(m => m.id === page.kbd.mode))
+                onActivated: i => backend.setAura(Theme.auraModes[i].id, page.kbd.color, page.kbd.color2, page.kbd.speed)
             }
-        }
-
-        // цвета: готовые + свой
-        Flow {
-            Layout.fillWidth: true
-            spacing: Kirigami.Units.smallSpacing
-            visible: page.kbd.mode !== "cycle"
-            Repeater {
-                model: Theme.swatches.concat(Theme.swatches.indexOf(page.kbd.color) === -1 && page.kbd.color ? [page.kbd.color] : [])
-                ColorSwatch {
-                    required property string modelData
-                    color: modelData
-                    selected: page.kbd.color === modelData
-                    onClicked: backend.setAura(page.kbd.mode, modelData, page.kbd.color2, page.kbd.speed)
-                }
-            }
-            QQC2.ToolButton {
-                icon.name: "color-picker"
-                text: "Свой цвет"
-                display: QQC2.AbstractButton.IconOnly
-                QQC2.ToolTip.visible: hovered
-                QQC2.ToolTip.text: text
-                onClicked: { colorDialog.selectedColor = page.kbd.color; colorDialog.open() }
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            visible: page.kbd.mode !== "static"
-            QQC2.Label { text: "Скорость"; opacity: 0.8 }
-            Repeater {
-                model: [{ id: "slow", name: "Медленно" }, { id: "normal", name: "Обычно" }, { id: "fast", name: "Быстро" }]
-                QQC2.Button {
-                    required property var modelData
-                    Layout.fillWidth: true
-                    text: modelData.name
-                    checkable: true
-                    checked: page.kbd.speed === modelData.id
-                    onClicked: backend.setAura(page.kbd.mode, page.kbd.color, page.kbd.color2, modelData.id)
-                }
-            }
-        }
-
-        Kirigami.LinkButton {
-            text: lightStates.visible ? "Скрыть: когда светиться" : "Когда светиться…"
-            onClicked: lightStates.visible = !lightStates.visible
-        }
-        GridLayout {
-            id: lightStates
-            visible: false
-            columns: 2
-            Layout.fillWidth: true
-            Repeater {
-                model: [{ id: "awake", name: "При работе" }, { id: "boot", name: "При загрузке" },
-                        { id: "sleep", name: "Во сне" }, { id: "shutdown", name: "При выключении" }]
-                QQC2.CheckBox {
-                    required property var modelData
-                    Layout.fillWidth: true
-                    text: modelData.name
-                    checked: !!page.kbd[modelData.id]
-                    onToggled: {
-                        const s = { awake: page.kbd.awake, boot: page.kbd.boot, sleep: page.kbd.sleep, shutdown: page.kbd.shutdown }
-                        s[modelData.id] = checked
-                        backend.setAuraPower(s.awake, s.boot, s.sleep, s.shutdown)
+            QQC2.Button {
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                enabled: page.kbd.mode !== "cycle"
+                onClicked: colorPopup.open()
+                contentItem: RowLayout {
+                    spacing: Kirigami.Units.smallSpacing
+                    Item { Layout.fillWidth: true }
+                    QQC2.Label { text: "Цвет" }
+                    Rectangle {
+                        implicitWidth: Kirigami.Units.iconSizes.small
+                        implicitHeight: implicitWidth
+                        radius: 3
+                        color: page.kbd.color || "white"
+                        border.color: Qt.alpha(Kirigami.Theme.textColor, 0.3)
                     }
+                    Item { Layout.fillWidth: true }
                 }
+            }
+            QQC2.Button {
+                Layout.fillWidth: true
+                Layout.preferredWidth: 1
+                text: "Ещё"
+                icon.name: "settings-configure-symbolic"
+                onClicked: extraPopup.open()
             }
         }
     }
-
-    Kirigami.Separator { Layout.fillWidth: true }
 
     // ---------- батарея ----------
     Section {
         visible: page.bat.capacity !== undefined
         title: "Батарея"
-        iconName: page.st.ac ? "battery-full-charging" : "battery-good"
-        info: page.bat.capacity + "%"
-              + (page.bat.status === "Discharging" ? "  ·  " + page.bat.power_w + " Вт" : page.st.ac ? "  ·  от сети" : "")
+        value: page.bat.capacity + "%"
+        iconName: page.st.ac ? "battery-full-charging-symbolic" : "battery-good-symbolic"
+        info: (page.bat.status === "Discharging" ? page.bat.power_w + " Вт" : page.st.ac ? "от сети" : "")
               + (page.bat.health ? "  ·  здоровье " + page.bat.health + "%" : "")
 
         RowLayout {
             Layout.fillWidth: true
+            spacing: Kirigami.Units.largeSpacing
             QQC2.Label { text: "Заряжать до" }
             QQC2.Slider {
                 id: chargeSlider
@@ -291,6 +261,9 @@ ColumnLayout {
                 value: page.bat.charge_limit || 100
                 onPressedChanged: if (!pressed && value !== page.bat.charge_limit) backend.setChargeLimit(value)
                 Keys.onReleased: if (value !== page.bat.charge_limit) backend.setChargeLimit(value)
+                QQC2.ToolTip.visible: hovered
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                QQC2.ToolTip.text: "Если ноутбук почти всегда от сети, 80% заметно продлят жизнь батареи"
             }
             QQC2.Label {
                 text: Math.round(chargeSlider.value) + "%"
@@ -299,22 +272,56 @@ ColumnLayout {
                 font.weight: Font.DemiBold
             }
         }
+    }
+
+    // ---------- низ ----------
+    RowLayout {
+        Layout.fillWidth: true
+        QQC2.Switch {
+            visible: page.toggles.boot_sound !== undefined
+            text: "Звук при включении"
+            checked: !!page.toggles.boot_sound
+            onToggled: backend.setToggle("boot_sound", checked)
+        }
+        Item { Layout.fillWidth: true }
         QQC2.Label {
-            Layout.fillWidth: true
-            wrapMode: Text.Wrap
+            text: page.st.version ? "v" + page.st.version : ""
             font: Kirigami.Theme.smallFont
-            opacity: 0.7
-            text: "Если ноутбук почти всегда от сети, 80% заметно продлят жизнь батареи"
+            opacity: 0.5
         }
     }
 
-    Kirigami.Separator { Layout.fillWidth: true }
-
-    QQC2.Switch {
-        visible: page.st.toggles && page.st.toggles.boot_sound !== undefined
-        text: "Звук при включении"
-        checked: !!(page.st.toggles && page.st.toggles.boot_sound)
-        onToggled: backend.setToggle("boot_sound", checked)
+    // ---------- всплывающее: цвет ----------
+    QQC2.Popup {
+        id: colorPopup
+        parent: QQC2.Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        padding: Kirigami.Units.largeSpacing * 1.5
+        contentItem: ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            Kirigami.Heading { level: 4; text: "Цвет подсветки" }
+            GridLayout {
+                columns: 5
+                columnSpacing: Kirigami.Units.largeSpacing
+                rowSpacing: Kirigami.Units.largeSpacing
+                Repeater {
+                    model: Theme.swatches
+                    ColorSwatch {
+                        required property string modelData
+                        color: modelData
+                        selected: page.kbd.color === modelData
+                        onClicked: { backend.setAura(page.kbd.mode, modelData, page.kbd.color2, page.kbd.speed); colorPopup.close() }
+                    }
+                }
+            }
+            QQC2.Button {
+                Layout.fillWidth: true
+                text: "Свой цвет…"
+                icon.name: "color-picker-symbolic"
+                onClicked: { colorPopup.close(); colorDialog.selectedColor = page.kbd.color; colorDialog.open() }
+            }
+        }
     }
 
     ColorDialog {
@@ -322,5 +329,61 @@ ColumnLayout {
         title: "Цвет подсветки"
         onAccepted: backend.setAura(page.kbd.mode === "cycle" ? "static" : page.kbd.mode,
                                     selectedColor.toString().toUpperCase(), page.kbd.color2, page.kbd.speed)
+    }
+
+    // ---------- всплывающее: ещё про подсветку ----------
+    QQC2.Popup {
+        id: extraPopup
+        parent: QQC2.Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - Kirigami.Units.gridUnit * 2, Kirigami.Units.gridUnit * 20)
+        modal: true
+        padding: Kirigami.Units.largeSpacing * 1.5
+        contentItem: ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            Kirigami.Heading { level: 4; text: "Подсветка клавиатуры" }
+
+            QQC2.Label { text: "Скорость эффекта"; opacity: 0.8; visible: page.kbd.mode !== "static" }
+            RowLayout {
+                visible: page.kbd.mode !== "static"
+                spacing: Kirigami.Units.smallSpacing
+                Repeater {
+                    model: [{ id: "slow", name: "Медленно" }, { id: "normal", name: "Обычно" }, { id: "fast", name: "Быстро" }]
+                    Tile {
+                        required property var modelData
+                        compact: true
+                        text: modelData.name
+                        selected: page.kbd.speed === modelData.id
+                        onClicked: backend.setAura(page.kbd.mode, page.kbd.color, page.kbd.color2, modelData.id)
+                    }
+                }
+            }
+
+            QQC2.Label { text: "Когда светиться"; opacity: 0.8 }
+            GridLayout {
+                columns: 2
+                Layout.fillWidth: true
+                Repeater {
+                    model: [{ id: "awake", name: "При работе" }, { id: "boot", name: "При загрузке" },
+                            { id: "sleep", name: "Во сне" }, { id: "shutdown", name: "При выключении" }]
+                    QQC2.CheckBox {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        text: modelData.name
+                        checked: !!page.kbd[modelData.id]
+                        onToggled: {
+                            const s = { awake: page.kbd.awake, boot: page.kbd.boot, sleep: page.kbd.sleep, shutdown: page.kbd.shutdown }
+                            s[modelData.id] = checked
+                            backend.setAuraPower(s.awake, s.boot, s.sleep, s.shutdown)
+                        }
+                    }
+                }
+            }
+            QQC2.Button {
+                Layout.alignment: Qt.AlignRight
+                text: "Готово"
+                onClicked: extraPopup.close()
+            }
+        }
     }
 }

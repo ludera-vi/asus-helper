@@ -195,7 +195,8 @@ class Service:
             self.bus.emit_signal(None, OBJECT_PATH, INTERFACE, "KeyboardBrightnessChanged",
                                  GLib.Variant("(ii)", (level, b["max"])))
             self.config.data["keyboard"]["brightness"] = level
-            # клавишу жмут несколько раз — сохраняем, когда закончили
+            self._changed()   # окно показывает новую яркость сразу
+            # клавишу жмут несколько раз — на диск сохраняем, когда закончили
             if self._save_brightness:
                 GLib.source_remove(self._save_brightness)
             self._save_brightness = GLib.timeout_add_seconds(3, self._save_config_later)
@@ -205,7 +206,6 @@ class Service:
     def _save_config_later(self):
         self._save_brightness = 0
         self.config.save()
-        self._changed()
         return GLib.SOURCE_REMOVE
 
     def _changed(self) -> None:
