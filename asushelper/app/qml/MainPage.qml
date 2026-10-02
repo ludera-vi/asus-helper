@@ -84,7 +84,9 @@ ColumnLayout {
              : page.gpu.switching ? (page.gpu.target === "eco" ? "Eco" : "Стандарт")
              : page.gpu.state === "off" ? "Eco" : "Стандарт"
         iconName: Qt.resolvedUrl("icons/gpu-symbolic.svg")
-        info: Theme.gpuInfo(page.gpu, page.nv)
+        info: (page.gpu.auto_eco && !page.gpu.switching
+               ? (page.gpu.state === "off" ? "видеокарта отключена (батарея)" : "видеокарта включена (зарядка)")
+               : Theme.gpuInfo(page.gpu, page.nv))
               + (page.fans.gpu == null ? "" : page.fans.gpu === 0 ? "  ·  вентилятор стоит" : "  ·  " + page.fans.gpu + " об/мин")
         infoColor: page.gpu.state === "active" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
 
@@ -112,7 +114,7 @@ ColumnLayout {
             }
             Tile {
                 text: "Авто"
-                subtitle: "Eco без зарядки"
+                subtitle: "от сети вкл. · без сети выкл."
                 iconName: "automated-tasks-symbolic"
                 accent: Theme.neutral
                 selected: !!page.gpu.auto_eco
