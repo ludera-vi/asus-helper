@@ -30,7 +30,27 @@ LOCK = "/run/gpu-eco.lock"
 
 
 class GpuError(Exception):
-    pass
+    """can_force — карту держат обычные программы пользователя, их можно закрыть и выключить."""
+    def __init__(self, text: str, can_force: bool = False):
+        super().__init__(text)
+        self.can_force = can_force
+
+
+# Рабочий стол и система: их нельзя закрывать никогда — это обрушит сеанс или всю систему.
+# Если NVIDIA держат они, значит рабочий стол запущен не только на встроенной видеокарте.
+DESKTOP = {"kwin_wayland", "kwin_x11", "kwin_wayland_wrapper", "Xwayland", "Xorg", "X", "plasmashell",
+           "ksmserver", "startplasma-wayland", "startplasma-x11", "gnome-shell", "mutter", "sway", "Hyprland",
+           "sddm", "sddm-helper", "sddm-greeter", "gdm", "gdm-wayland-session", "systemd", "systemd-logind"}
+
+
+def is_protected(pid: int, comm: str) -> bool:
+    """Процесс, который нельзя закрыть: системный (root, PID 1) или часть рабочего стола."""
+    if pid == 1 or comm in DESKTOP:
+        return True
+    try:
+        return os.stat(f"/proc/{pid}").st_uid == 0
+    except OSError:
+        return False
 
 
 def _attr(name: str) -> str:
@@ -151,8 +171,13 @@ def turn_off(force: bool = False) -> None:
         busy = holders(gpu)
         if busy:
             names = ", ".join(sorted({c for _, c in busy}))
+            protected = sorted({c for p, c in busy if is_protected(p, c)})
+            if protected:
+                # закрывать нельзя — это рабочий стол или система
+                raise GpuError(f"NVIDIA держит рабочий стол ({', '.join(protected)}). Он отпустит её после "
+                               f"выхода из сеанса и входа снова — один раз после установки Asus-helper")
             if not force:
-                raise GpuError(f"NVIDIA используют: {names}")
+                raise GpuError(f"NVIDIA используют: {names}", can_force=True)
             log.info("закрываю программы на NVIDIA: %s", names)
             for pid, _ in busy:
                 try:
@@ -213,18 +238,21 @@ class Switcher:
         self.on_done = on_done      # on_done(error: str | None) — вызывается в главном потоке
         self.busy = False
         self.last_error: str | None = None
+        self.can_force = False
 
     def start(self, want_off: bool, force: bool = False) -> bool:
         if self.busy:
             return False
         self.busy = True
         self.last_error = None
+        self.can_force = False
         threading.Thread(target=self._work, args=(want_off, force), daemon=True).start()
         return True
 
     def _work(self, want_off: bool, force: bool) -> None:
         from gi.repository import GLib
         err = None
+        can_force = False
         try:
             with open(sysfs.path(LOCK) if sysfs.ROOT else LOCK, "w") as lock:
                 try:
@@ -234,6 +262,7 @@ class Switcher:
                 (turn_off(force) if want_off else turn_on())
         except GpuError as e:
             err = str(e)
+            can_force = e.can_force
             log.warning("видеокарта: %s", err)
         except Exception as e:
             err = f"внутренняя ошибка: {e}"
@@ -242,6 +271,7 @@ class Switcher:
         def done():
             self.busy = False
             self.last_error = err
+            self.can_force = can_force
             self.on_done(err)
             return GLib.SOURCE_REMOVE
         GLib.idle_add(done)

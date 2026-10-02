@@ -214,8 +214,8 @@ def cmd_gpu(cl, args):
             g = cl.state()["gpu"]
             if not g["switching"]:
                 if g["error"]:
-                    raise Error(g["error"] + ("" if "--force" in args or "используют" not in g["error"]
-                                              else "\nЗакрыть их и выключить: asus-helper-cli gpu eco --force"))
+                    raise Error(g["error"] + ("\nЗакрыть их и выключить: asus-helper-cli gpu eco --force"
+                                              if g.get("can_force") and "--force" not in args else ""))
                 print(GPU_NAMES.get(g["state"], g["state"]))
                 return
         raise Error("переключение не закончилось за 30 с — смотри журнал демона")

@@ -366,3 +366,41 @@ class GenericTest(unittest.TestCase):
                "awake": True, "boot": True, "sleep": True, "shutdown": True}
         self.assertTrue(aura.apply(cfg))
         self.assertEqual(fakesys.read(ROOT, "/sys/class/leds/asus::kbd_backlight/kbd_rgb_mode"), "1 1 255 128 0 245")
+
+
+class GpuSafetyTest(unittest.TestCase):
+    """Выключение NVIDIA никогда не закрывает рабочий стол и системные процессы."""
+
+    def setUp(self):
+        fakesys.build(ROOT)
+        from asushelper.daemon import gpu
+        self.gpu = gpu
+        self.saved = (gpu.find_gpu, gpu.bios_off, gpu.holders, gpu.os.kill, gpu.is_protected)
+        self.killed = []
+        gpu.find_gpu = lambda: "0000:01:00.0"
+        gpu.bios_off = lambda: False
+        gpu.os.kill = lambda pid, sig: self.killed.append(pid)
+
+    def tearDown(self):
+        g = self.gpu
+        g.find_gpu, g.bios_off, g.holders, g.os.kill, g.is_protected = self.saved
+
+    def test_desktop_never_killed(self):
+        self.gpu.holders = lambda gpu=None: [(1, "systemd"), (900, "kwin_wayland"), (950, "Xwayland"), (4242, "steam")]
+        with self.assertRaises(self.gpu.GpuError) as e:
+            self.gpu.turn_off(force=True)
+        self.assertFalse(e.exception.can_force)
+        self.assertIn("рабочий стол", str(e.exception))
+        self.assertEqual(self.killed, [])
+
+    def test_user_apps_can_be_forced(self):
+        self.gpu.holders = lambda gpu=None: [(4242, "steam")]
+        self.gpu.is_protected = lambda pid, comm: False
+        with self.assertRaises(self.gpu.GpuError) as e:
+            self.gpu.turn_off(force=False)
+        self.assertTrue(e.exception.can_force)
+        self.assertEqual(self.killed, [])
+
+    def test_root_process_protected(self):
+        self.assertTrue(self.gpu.is_protected(1, "anything"))
+        self.assertTrue(self.gpu.is_protected(12345, "kwin_wayland"))

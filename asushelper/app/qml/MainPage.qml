@@ -32,7 +32,7 @@ ColumnLayout {
         value: Theme.profileName(page.st.profile)
         iconName: "speedometer-symbolic"
         info: (page.st.cpu_temp != null ? "CPU " + Math.round(page.st.cpu_temp) + " °C" : "")
-              + (page.fans.cpu != null ? "  ·  " + page.fans.cpu + " об/мин" : "")
+              + (page.fans.cpu == null ? "" : page.fans.cpu === 0 ? "  ·  вентилятор стоит" : "  ·  " + page.fans.cpu + " об/мин")
 
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
@@ -82,7 +82,8 @@ ColumnLayout {
         title: "Видеокарта"
         value: page.gpu.auto_eco ? "Оптимальный" : page.gpu.state === "off" ? "Eco" : "Стандарт"
         iconName: Qt.resolvedUrl("icons/gpu-symbolic.svg")
-        info: Theme.gpuInfo(page.gpu, page.nv) + (page.fans.gpu != null ? "  ·  " + page.fans.gpu + " об/мин" : "")
+        info: Theme.gpuInfo(page.gpu, page.nv)
+              + (page.fans.gpu == null ? "" : page.fans.gpu === 0 ? "  ·  вентилятор стоит" : "  ·  " + page.fans.gpu + " об/мин")
         infoColor: page.gpu.state === "active" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
 
         RowLayout {
@@ -128,7 +129,8 @@ ColumnLayout {
             text: page.gpu.error || ""
             actions: [
                 Kirigami.Action {
-                    visible: (page.gpu.error || "").indexOf("используют") !== -1
+                    // только обычные программы пользователя — рабочий стол и систему закрывать нельзя
+                    visible: !!page.gpu.can_force
                     text: "Закрыть их и выключить"
                     icon.name: "process-stop-symbolic"
                     onTriggered: backend.setGpuMode("eco", true)

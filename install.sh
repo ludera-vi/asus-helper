@@ -2,6 +2,7 @@
 # Установщик Asus-helper (Arch и производные, KDE Plasma 6). Ставится на систему без asusctl,
 # power-profiles-daemon, supergfxctl и envycontrol — если они есть, установщик скажет, что удалить.
 # Запуск: ./install.sh   (от обычного пользователя, sudo спросит сам). Удаление: ./uninstall.sh
+#         ./install.sh --update   обновить уже установленное: без вопросов и снимка, с перезапуском
 
 set -uo pipefail
 
@@ -49,6 +50,12 @@ step() {
 
 unit_exists() { systemctl cat "$1" >/dev/null 2>&1; }
 user_unit_exists() { systemctl --user cat "$1" >/dev/null 2>&1; }
+
+UPDATE=0
+[ "${1:-}" = --update ] && UPDATE=1
+if [ $UPDATE = 1 ] && [ ! -e /etc/systemd/system/asus-helperd.service ]; then
+    echo "Asus-helper ещё не установлен — запустите ./install.sh без --update"; exit 1
+fi
 
 mkdir -p "$(dirname "$LOG")"
 echo "=== asus-helper install $(date) ===" > "$LOG"
@@ -119,6 +126,9 @@ esac
 
 dev_daemon=$(pgrep -f '^python3 -m asushelper.daemon' || true)
 
+if [ $UPDATE = 1 ]; then
+    DO_KWIN=0; DO_APPS=0   # настройки рабочего стола уже стоят — не трогаем
+else
 # ---------- 2. план ----------
 title "Что будет сделано"
 info "Демон ${B}asus-helperd${R} — системная служба, стартует при загрузке"
@@ -154,6 +164,8 @@ if command -v snapper >/dev/null && snapper list-configs 2>/dev/null | grep -q '
         else warn "Снимок не создан (журнал: $LOG)"; fi
     fi
 fi
+
+fi   # конец: только при обычной установке
 
 # ---------- 4. установка ----------
 title "Установка"
@@ -211,7 +223,8 @@ else
 fi
 
 # ---------- 5. служба ----------
-step "Демон asus-helperd запущен и включён" sudo systemctl enable --now asus-helperd.service
+step "Демон asus-helperd запущен и включён" sudo systemctl enable asus-helperd.service
+step "Демон перезапущен с новой версией" sudo systemctl restart asus-helperd.service
 
 # ---------- 6. встроенная видеокарта ----------
 ENVD="$HOME/.config/environment.d"
