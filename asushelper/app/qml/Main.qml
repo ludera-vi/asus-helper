@@ -24,7 +24,7 @@ Window {
     flags: Qt.FramelessWindowHint
 
     LayerShell.Window.scope: "asus-helper"
-    LayerShell.Window.layer: LayerShell.Window.LayerTop
+    LayerShell.Window.layer: LayerShell.Window.LayerOverlay   // поверх полноэкранных игр и видео
     LayerShell.Window.anchors: (anchorTop ? LayerShell.Window.AnchorTop : LayerShell.Window.AnchorBottom)
                                | LayerShell.Window.AnchorRight
     LayerShell.Window.margins: Qt.rect(0, edge, edge, edge)   // left, top, right, bottom
