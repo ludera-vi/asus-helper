@@ -13,8 +13,9 @@
   asus-helper-cli power set PROFILE ATTR VALUE|default
   asus-helper-cli power reset PROFILE
   asus-helper-cli gpu                    состояние видеокарты
-  asus-helper-cli gpu eco|standard [--force]   выключить / включить NVIDIA (--force закроет программы на ней)
-  asus-helper-cli gpu auto on|off        «Оптимальный»: Eco на батарее, NVIDIA от сети
+  asus-helper-cli gpu eco|standard [--force] [--display]   выключить / включить NVIDIA
+                                       --force закроет программы на ней, --display — даже с монитором на NVIDIA
+  asus-helper-cli gpu auto on|off        «Авто»: Eco без зарядки, NVIDIA от сети
   asus-helper-cli kbd [0-3]              яркость подсветки клавиатуры
   asus-helper-cli aura static|breathe|cycle|strobe [#RRGGBB] [#RRGGBB] [slow|normal|fast]
   asus-helper-cli aura power awake,boot,sleep,shutdown   когда светиться (перечислить нужное)
@@ -99,7 +100,7 @@ def cmd_status(cl: Client, _args):
         users = f"   используют: {', '.join(g['holders'])}" if g.get("holders") else ""
         print(f"Видеокарта : {GPU_NAMES.get(g['state'], g['state'])}"
               f"{'  (переключается…)' if g['switching'] else ''}"
-              f"   оптимальный: {'да' if g['auto_eco'] else 'нет'}{users}")
+              f"   авто: {'да' if g['auto_eco'] else 'нет'}{users}")
         if g.get("error"):
             print(f"             последняя ошибка: {g['error']}")
     k = s.get("keyboard") or {}
@@ -205,7 +206,7 @@ def cmd_gpu(cl, args):
         if g.get("holders"):
             print("Используют: " + ", ".join(g["holders"]))
     elif args[0] in ("eco", "standard"):
-        cl.call("SetGpuMode", "sb", args[0], "--force" in args)
+        cl.call("SetGpuModeFlags", "su", args[0], (1 if "--force" in args else 0) | (2 if "--display" in args else 0))
         print("Переключаю… (это занимает несколько секунд)")
         # ждём окончания — демон сообщает сигналом, проще опросить состояние
         import time
@@ -214,8 +215,10 @@ def cmd_gpu(cl, args):
             g = cl.state()["gpu"]
             if not g["switching"]:
                 if g["error"]:
-                    raise Error(g["error"] + ("\nЗакрыть их и выключить: asus-helper-cli gpu eco --force"
-                                              if g.get("can_force") and "--force" not in args else ""))
+                    hint = ("\nЗакрыть их и выключить: asus-helper-cli gpu eco --force"
+                            if g.get("can_force") and "--force" not in args else
+                            "\nВыключить всё равно: asus-helper-cli gpu eco --display" if "монитор" in g["error"] else "")
+                    raise Error(g["error"] + hint)
                 print(GPU_NAMES.get(g["state"], g["state"]))
                 return
         raise Error("переключение не закончилось за 30 с — смотри журнал демона")

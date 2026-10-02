@@ -80,7 +80,7 @@ ColumnLayout {
     Section {
         visible: !!page.gpu.supported
         title: "Видеокарта"
-        value: page.gpu.auto_eco ? "Оптимальный" : page.gpu.state === "off" ? "Eco" : "Стандарт"
+        value: page.gpu.auto_eco ? "Авто" : page.gpu.state === "off" ? "Eco" : "Стандарт"
         iconName: Qt.resolvedUrl("icons/gpu-symbolic.svg")
         info: Theme.gpuInfo(page.gpu, page.nv)
               + (page.fans.gpu == null ? "" : page.fans.gpu === 0 ? "  ·  вентилятор стоит" : "  ·  " + page.fans.gpu + " об/мин")
@@ -93,24 +93,24 @@ ColumnLayout {
                 subtitle: "NVIDIA выключена"
                 iconName: "battery-profile-powersave-symbolic"
                 accent: Theme.positive
-                selected: !page.gpu.auto_eco && page.gpu.state === "off"
-                busy: !!page.gpu.switching && page.gpu.state !== "off"
+                selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "eco" : page.gpu.state === "off")
+                busy: !!page.gpu.switching && page.gpu.target === "eco"
                 enabled: !page.gpu.switching && !!page.gpu.mux_hybrid
-                onClicked: backend.setGpuMode("eco", false)
+                onClicked: (page.gpu.external || []).length ? displayWarning.open() : backend.setGpuMode("eco", false)
             }
             Tile {
                 text: "Стандарт"
                 subtitle: "iGPU + NVIDIA"
                 iconName: "monitor-symbolic"
                 accent: Theme.highlight
-                selected: !page.gpu.auto_eco && page.gpu.state !== "off"
-                busy: !!page.gpu.switching && page.gpu.state === "off"
+                selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "standard" : page.gpu.state !== "off")
+                busy: !!page.gpu.switching && page.gpu.target === "standard"
                 enabled: !page.gpu.switching
                 onClicked: backend.setGpuMode("standard", false)
             }
             Tile {
-                text: "Оптимальный"
-                subtitle: "сам по зарядке"
+                text: "Авто"
+                subtitle: "Eco без зарядки"
                 iconName: "automated-tasks-symbolic"
                 accent: Theme.neutral
                 selected: !!page.gpu.auto_eco
@@ -347,6 +347,38 @@ ColumnLayout {
             text: page.st.version ? "v" + page.st.version : ""
             font: Kirigami.Theme.smallFont
             opacity: 0.5
+        }
+    }
+
+    // ---------- предупреждение: монитор на NVIDIA ----------
+    QQC2.Popup {
+        id: displayWarning
+        parent: QQC2.Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - Kirigami.Units.gridUnit * 2, Kirigami.Units.gridUnit * 20)
+        modal: true
+        padding: Kirigami.Units.largeSpacing * 1.5
+        contentItem: ColumnLayout {
+            spacing: Kirigami.Units.largeSpacing
+            RowLayout {
+                Kirigami.Icon { source: "dialog-warning"; implicitWidth: Kirigami.Units.iconSizes.medium; implicitHeight: implicitWidth }
+                Kirigami.Heading { level: 4; text: "Подключён внешний монитор"; Layout.fillWidth: true; wrapMode: Text.Wrap }
+            }
+            QQC2.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: "Монитор (" + (page.gpu.external || []).join(", ") + ") подключён к видеокарте NVIDIA. "
+                      + "Если её выключить, он погаснет — изображение останется только на экране ноутбука."
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                QQC2.Button { text: "Отмена"; onClicked: displayWarning.close() }
+                QQC2.Button {
+                    text: "Всё равно выключить"
+                    icon.name: "battery-profile-powersave-symbolic"
+                    onClicked: { displayWarning.close(); backend.setGpuModeFlags("eco", 2) }
+                }
+            }
         }
     }
 

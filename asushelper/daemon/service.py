@@ -53,6 +53,10 @@ XML = f"""
     <method name="SetGpuMode">
       <arg type="s" direction="in" name="mode"/><arg type="b" direction="in" name="force"/>
     </method>
+    <!-- flags: 1 — закрыть программы на NVIDIA, 2 — выключить, даже если к ней подключён монитор -->
+    <method name="SetGpuModeFlags">
+      <arg type="s" direction="in" name="mode"/><arg type="u" direction="in" name="flags"/>
+    </method>
     <method name="SetGpuAutoEco"><arg type="b" direction="in" name="enabled"/></method>
     <!-- переключатели BIOS: panel_overdrive, boot_sound -->
     <method name="SetToggle">
@@ -105,6 +109,8 @@ class Service:
         self.listeners = []   # другие интерфейсы (эмуляция PPD) — тоже хотят знать о смене режима
         self.modes = Modes(config, self._changed)
         self.gpu = gpu.Switcher(self._gpu_done)
+        self._gpu_cache = {}
+        self._gpu_state()
         self.history = history.History()
         self._last_profile = None
         self._save_brightness = 0
@@ -133,24 +139,36 @@ class Service:
             "cpu_boost": hw.turbo(),
             "slash": {**self.config.data["slash"], "supported": slash.supported(),
                       "modes": [{"id": k, "name": v[1]} for k, v in slash.MODES.items()]},
-            "gpu": {
-                "supported": gpu.supported(),
-                "state": gpu.state() if gpu.supported() else None,
-                "mux_hybrid": gpu.mux_hybrid(),
-                "auto_eco": self.config.data["gpu"]["auto_eco"],
-                "switching": self.gpu.busy,
-                "error": self.gpu.last_error,
-                "can_force": self.gpu.can_force and self.gpu.last_error is not None,
-            },
+            "gpu": self._gpu_state(),
             "keyboard": {**self.config.data["keyboard"], "rgb": aura.rgb_method(),
                          **({"brightness": b["value"], "max": b["max"]} if (b := aura.brightness()) else {})}
                         if aura.brightness() or aura.rgb_method() else None,
         }
 
+    def _gpu_state(self) -> dict:
+        # Во время переключения шину PCI не читаем: при её пересканировании (включение NVIDIA) чтение
+        # /sys/bus/pci ждёт до 10 с, и демон перестал бы отвечать. Отдаём последнее известное + цель.
+        if self.gpu.busy:
+            return dict(self._gpu_cache, switching=True, target=self.gpu.target,
+                        auto_eco=self.config.data["gpu"]["auto_eco"], error=None, can_force=False)
+        supported = gpu.supported()
+        self._gpu_cache = {
+            "supported": supported,
+            "state": gpu.state() if supported else None,
+            "mux_hybrid": gpu.mux_hybrid(),
+            "auto_eco": self.config.data["gpu"]["auto_eco"],
+            "switching": False,
+            "target": None,
+            "error": self.gpu.last_error,
+            "can_force": self.gpu.can_force and self.gpu.last_error is not None,
+            "external": gpu.external_displays() if supported and not gpu.bios_off() else [],
+        }
+        return self._gpu_cache
+
     def full_state(self) -> dict:
         """state() и то, что дорого считать для каждого сигнала (кто держит NVIDIA)."""
         s = self.state()
-        if s["gpu"]["state"] not in (None, "off"):
+        if s["gpu"]["state"] not in (None, "off") and not s["gpu"]["switching"]:
             s["gpu"]["holders"] = sorted({c for _, c in gpu.holders()})
         return s
 
@@ -201,6 +219,9 @@ class Service:
         if not (self.config.data["gpu"]["auto_eco"] and gpu.supported()):
             return
         want_off = not self.modes.ac
+        if want_off and gpu.external_displays():
+            log.info("«Оптимальный»: к NVIDIA подключён монитор — не выключаю")
+            return
         if gpu.bios_off() != want_off and not self.gpu.busy:
             log.info("«Оптимальный»: %s", "батарея → Eco" if want_off else "сеть → NVIDIA включается")
             self.gpu.start(want_off)
@@ -367,6 +388,10 @@ class Service:
         self._changed()
 
     def do_SetGpuMode(self, mode, force):
+        self.do_SetGpuModeFlags(mode, 1 if force else 0)
+
+    def do_SetGpuModeFlags(self, mode, flags):
+        force, ignore_displays = bool(flags & 1), bool(flags & 2)
         if not gpu.supported():
             raise Failed("на этом ноутбуке нельзя выключать видеокарту через BIOS")
         if mode not in ("eco", "standard"):
@@ -379,7 +404,7 @@ class Service:
             # ручной выбор отменяет «Оптимальный», иначе при смене питания карта переключится сама
             self.config.data["gpu"]["auto_eco"] = False
             self.config.save()
-        self.gpu.start(mode == "eco", force)
+        self.gpu.start(mode == "eco", force, ignore_displays)
         self._changed()
 
     def do_SetGpuAutoEco(self, enabled):

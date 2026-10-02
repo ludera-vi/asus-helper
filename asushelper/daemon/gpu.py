@@ -92,6 +92,21 @@ def state() -> str:
     return sysfs.read(f"{PCI}/{gpu}/power/runtime_status", "unknown")
 
 
+def external_displays(gpu: str | None = None) -> list[str]:
+    """Мониторы, подключённые к выходам NVIDIA (HDMI, DP). Встроенный экран (eDP) через MUX не считаем:
+    им всё равно управляет встроенная видеокарта. После Eco такие мониторы погаснут."""
+    gpu = gpu or find_gpu()
+    if gpu is None:
+        return []
+    out = []
+    for card in sysfs.find(f"{PCI}/{gpu}/drm/card*"):
+        for conn in sysfs.find(card + "/card*-*"):
+            name = os.path.basename(conn).split("-", 1)[1]
+            if not name.startswith("eDP") and sysfs.read(conn + "/status") == "connected":
+                out.append(name)
+    return out
+
+
 def holders(gpu: str | None = None) -> list[tuple[int, str]]:
     """Процессы, у которых открыта NVIDIA: [(pid, имя)]. Карту не будит — смотрит только /proc."""
     gpu = gpu or find_gpu()
@@ -118,6 +133,42 @@ def holders(gpu: str | None = None) -> list[tuple[int, str]]:
         except OSError:
             continue
     return out
+
+
+# ---------- ложная клавиша «переключить дисплей» ----------
+# Когда видеокарта выключается или включается, BIOS шлёт через asus-wmi клавишу KEY_SWITCHVIDEOMODE
+# (как Meta+P) — KDE в ответ открывает выбор экрана. На время переключения забираем устройство
+# «Asus WMI hotkeys» себе (EVIOCGRAB): эта клавиша до рабочего стола не дойдёт.
+EVIOCGRAB = 0x40044590
+HOTKEYS_NAME = "Asus WMI hotkeys"
+
+
+def _grab_hotkeys():
+    """Открытый и захваченный дескриптор устройства горячих клавиш ASUS или None."""
+    for e in sysfs.find("/sys/class/input/event*"):
+        if sysfs.read(e + "/device/name") == HOTKEYS_NAME:
+            try:
+                fd = os.open("/dev/input/" + os.path.basename(e), os.O_RDONLY | os.O_NONBLOCK)
+                fcntl.ioctl(fd, EVIOCGRAB, 1)
+                return fd
+            except OSError as err:
+                log.info("не захватить %s: %s", HOTKEYS_NAME, err)
+                return None
+    return None
+
+
+def _release_hotkeys(fd, delay: float = 2.0) -> None:
+    """Отпустить через delay секунд: событие от BIOS приходит с задержкой после записи флага."""
+    if fd is None:
+        return
+    def release():
+        time.sleep(delay)
+        try:
+            os.read(fd, 4096 * 24)      # выбросить накопленное
+        except OSError:
+            pass
+        os.close(fd)                    # закрытие снимает захват
+    threading.Thread(target=release, daemon=True).start()
 
 
 def _run(*cmd) -> bool:
@@ -158,9 +209,11 @@ def fixup() -> bool:
     return True
 
 
-def turn_off(force: bool = False) -> None:
+def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
     """Eco. GpuError с понятным текстом, если нельзя; при ошибке всё возвращается как было."""
     gpu = find_gpu()
+    if gpu and not ignore_displays and (ext := external_displays(gpu)):
+        raise GpuError(f"К NVIDIA подключён монитор ({', '.join(ext)}) — после выключения он погаснет")
     if bios_off() and (gpu is None or not sysfs.exists(f"{PCI}/{gpu}/driver")):
         fixup()
         return
@@ -237,6 +290,7 @@ class Switcher:
     def __init__(self, on_done):
         self.on_done = on_done      # on_done(error: str | None) — вызывается в главном потоке
         self.busy = False
+        self.target: str | None = None
         self._error: str | None = None
         self._error_at = 0.0
         self.can_force = False
@@ -253,16 +307,17 @@ class Switcher:
         self._error = v
         self._error_at = time.monotonic()
 
-    def start(self, want_off: bool, force: bool = False) -> bool:
+    def start(self, want_off: bool, force: bool = False, ignore_displays: bool = False) -> bool:
         if self.busy:
             return False
         self.busy = True
+        self.target = "eco" if want_off else "standard"
         self.last_error = None
         self.can_force = False
-        threading.Thread(target=self._work, args=(want_off, force), daemon=True).start()
+        threading.Thread(target=self._work, args=(want_off, force, ignore_displays), daemon=True).start()
         return True
 
-    def _work(self, want_off: bool, force: bool) -> None:
+    def _work(self, want_off: bool, force: bool, ignore_displays: bool) -> None:
         from gi.repository import GLib
         err = None
         can_force = False
@@ -272,7 +327,11 @@ class Switcher:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
                     raise GpuError("видеокарту уже переключает другая программа (gpu-eco?)")
-                (turn_off(force) if want_off else turn_on())
+                grab = None if sysfs.ROOT else _grab_hotkeys()
+                try:
+                    (turn_off(force, ignore_displays) if want_off else turn_on())
+                finally:
+                    _release_hotkeys(grab)
         except GpuError as e:
             err = str(e)
             can_force = e.can_force

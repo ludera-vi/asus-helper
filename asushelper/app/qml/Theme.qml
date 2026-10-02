@@ -46,7 +46,7 @@ Item {
 
     function gpuInfo(gpu, nv) {
         if (!gpu || !gpu.state) return ""
-        if (gpu.switching) return "переключается…"
+        if (gpu.switching) return gpu.target === "eco" ? "выключаю NVIDIA…" : "включаю NVIDIA…"
         switch (gpu.state) {
         case "off": return "NVIDIA выключена"
         case "suspended": return "NVIDIA спит"

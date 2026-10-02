@@ -1,5 +1,6 @@
 """Поддельное дерево sysfs, похожее на GU605MZ (значения сняты с настоящего ноутбука)."""
 import os
+import shutil
 
 
 def _w(root, p, v):
@@ -10,6 +11,9 @@ def _w(root, p, v):
 
 
 def build(root: str, ac: bool = False) -> None:
+    # каждый раз с нуля: тесты не должны видеть, что оставили другие
+    if os.path.isdir(root):
+        shutil.rmtree(root)
     _w(root, "/sys/firmware/acpi/platform_profile", "quiet")
     _w(root, "/sys/firmware/acpi/platform_profile_choices", "quiet balanced performance")
 

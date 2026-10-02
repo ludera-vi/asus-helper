@@ -404,3 +404,30 @@ class GpuSafetyTest(unittest.TestCase):
     def test_root_process_protected(self):
         self.assertTrue(self.gpu.is_protected(1, "anything"))
         self.assertTrue(self.gpu.is_protected(12345, "kwin_wayland"))
+
+
+class GpuDisplayTest(unittest.TestCase):
+    def setUp(self):
+        fakesys.build(ROOT)
+        from asushelper.daemon import gpu
+        self.gpu = gpu
+        d = "/sys/bus/pci/devices/0000:01:00.0"
+        fakesys._w(ROOT, d + "/vendor", "0x10de")
+        fakesys._w(ROOT, d + "/class", "0x030000")
+        fakesys._w(ROOT, d + "/drm/card0/card0-eDP-2/status", "connected")     # встроенный через MUX — не в счёт
+        fakesys._w(ROOT, d + "/drm/card0/card0-HDMI-A-1/status", "disconnected")
+
+    def test_internal_panel_not_external(self):
+        self.assertEqual(self.gpu.external_displays(), [])
+
+    def test_hdmi_monitor_blocks_eco(self):
+        fakesys._w(ROOT, "/sys/bus/pci/devices/0000:01:00.0/drm/card0/card0-HDMI-A-1/status", "connected")
+        self.assertEqual(self.gpu.external_displays(), ["HDMI-A-1"])
+        saved = self.gpu.bios_off
+        self.gpu.bios_off = lambda: False
+        try:
+            with self.assertRaises(self.gpu.GpuError) as e:
+                self.gpu.turn_off()
+            self.assertIn("монитор", str(e.exception))
+        finally:
+            self.gpu.bios_off = saved

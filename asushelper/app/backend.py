@@ -181,6 +181,9 @@ class Backend(QObject):
     @Slot(str, bool)
     def setGpuMode(self, mode, force): self._call("SetGpuMode", "sb", (mode, force))
 
+    @Slot(str, int)
+    def setGpuModeFlags(self, mode, flags): self._call("SetGpuModeFlags", "su", (mode, flags))
+
     @Slot(bool)
     def setGpuAutoEco(self, v): self._call("SetGpuAutoEco", "b", (v,))
 
