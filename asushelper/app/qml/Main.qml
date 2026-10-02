@@ -94,12 +94,13 @@ Window {
                 }
                 Item { Layout.fillWidth: true }
                 QQC2.ToolButton {
-                    icon.name: "application-exit"
-                    text: "Выйти из Asus-helper"
+                    icon.name: "window-close-symbolic"
+                    text: "Закрыть окно"
                     display: QQC2.AbstractButton.IconOnly
-                    onClicked: Qt.quit()
+                    onClicked: win.visible = false
                     QQC2.ToolTip.visible: hovered
-                    QQC2.ToolTip.text: text + " (демон продолжит работать)"
+                    QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                    QQC2.ToolTip.text: "Закрыть окно (Asus-helper остаётся в трее; выйти — правый клик по значку)"
                 }
             }
 
