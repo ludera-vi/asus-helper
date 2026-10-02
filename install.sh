@@ -1,9 +1,7 @@
 #!/bin/bash
-# Установщик Asus-helper: замена asusd / rog-control-center / gpu-eco / asus-osd (Arch и производные).
-# Запуск: ./install.sh   (от обычного пользователя, sudo спросит сам)
-#
-# Ничего не удаляет. asusd и старые помощники только выключаются (systemctl mask/disable);
-# ./uninstall.sh возвращает всё как было.
+# Установщик Asus-helper (Arch и производные, KDE Plasma 6). Ставится на систему без asusctl,
+# power-profiles-daemon, supergfxctl и envycontrol — если они есть, установщик скажет, что удалить.
+# Запуск: ./install.sh   (от обычного пользователя, sudo спросит сам). Удаление: ./uninstall.sh
 
 set -uo pipefail
 
@@ -84,6 +82,41 @@ if [ ${#missing[@]} -eq 0 ]; then ok "Пакеты: python-gobject, pyside6, ksc
 else warn "Не хватает пакетов: ${missing[*]} — поставлю"; fi
 [ $problems -eq 0 ] || { fail "Установка невозможна"; exit 1; }
 
+# Ставим только на чистую систему: эти программы делают то же самое и будут спорить с демоном
+conflicts=()
+for p in asusctl rog-control-center power-profiles-daemon supergfxctl envycontrol optimus-manager; do
+    pacman -Q "$p" >/dev/null 2>&1 && conflicts+=("$p")
+done
+old=()
+[ -e /usr/local/bin/gpu-eco ] && old+=("gpu-switch (gpu-eco)")
+[ -e "$HOME/.local/bin/asus-osd" ] && old+=("lighting_keyboard (asus-osd)")
+if [ ${#conflicts[@]} -gt 0 ] || [ ${#old[@]} -gt 0 ]; then
+    fail "Мешают другие программы управления ноутбуком:"
+    [ ${#conflicts[@]} -gt 0 ] && explain "пакеты: ${conflicts[*]}  →  sudo pacman -Rns ${conflicts[*]}"
+    [ ${#old[@]} -gt 0 ] && explain "старые помощники: ${old[*]}  →  их ./uninstall.sh"
+    explain "Удалите их и запустите установку снова."
+    exit 1
+fi
+ok "Конфликтующих программ нет"
+
+# Встроенная видеокарта — на ней будет рабочий стол, чтобы NVIDIA выключалась без выхода из сеанса
+IGPU_PCI=""; IGPU_VENDOR=""
+for c in /sys/class/drm/card[0-9]*; do
+    [ -e "$c/device/vendor" ] || continue
+    v=$(cat "$c/device/vendor")
+    [ "$v" = 0x10de ] && continue
+    pci=$(basename "$(readlink -f "$c/device")")
+    if [ -z "$IGPU_PCI" ] || [ "$(cat "$c/device/boot_vga" 2>/dev/null)" = 1 ]; then
+        IGPU_PCI=$pci; IGPU_VENDOR=$v
+    fi
+done
+case "$IGPU_VENDOR" in
+    0x8086) IGPU_NAME="Intel"; ICD_GLOB="intel*_icd*.json" ;;
+    0x1002) IGPU_NAME="AMD";   ICD_GLOB="radeon_icd*.json" ;;
+    *)      IGPU_NAME="" ;;
+esac
+[ -n "$IGPU_PCI" ] && ok "Встроенная видеокарта: $IGPU_NAME ($IGPU_PCI)" || warn "Встроенная видеокарта не найдена"
+
 dev_daemon=$(pgrep -f '^python3 -m asushelper.daemon' || true)
 
 # ---------- 2. план ----------
@@ -92,12 +125,20 @@ info "Демон ${B}asus-helperd${R} — системная служба, ст�
 explain "/usr/local/lib/asus-helper, /usr/local/bin/asus-helper{d,-cli,}, права D-Bus и polkit"
 info "Значок ${B}Asus-helper${R} в трее при входе в систему, клавиша ROG открывает окно"
 info "Настройки: /etc/asus-helper (если их нет — переносятся из /etc/asusd)"
-echo
-info "Выключаются (${B}не удаляются${R}), ./uninstall.sh вернёт:"
-unit_exists asusd.service         && explain "asusd, asus-shutdown — systemctl mask"
-unit_exists gpu-eco-fixup.service && explain "gpu-eco-fixup — его работу (уборка NVIDIA перед сном) делает демон"
-user_unit_exists asus-osd.service && explain "asus-osd — карточки KDE теперь показывает Asus-helper"
-[ -n "$dev_daemon" ] && explain "пробный демон из dev-run.sh (сейчас запущен) — будет остановлен"
+[ -n "$dev_daemon" ] && info "Пробный демон из dev-run.sh (сейчас запущен) будет остановлен"
+
+DO_KWIN=0; DO_APPS=0
+if [ -n "$IGPU_PCI" ]; then
+    echo
+    info "${B}Рабочий стол KDE всегда на $IGPU_NAME${R}"
+    explain "Тогда NVIDIA выключается (Eco) одной кнопкой, без выхода из сеанса."
+    explain "Минус: HDMI (обычно подключён к NVIDIA) не работает, пока настройка включена."
+    ask "Рабочий стол на $IGPU_NAME? (рекомендуется)" && DO_KWIN=1
+    echo
+    info "${B}Программы по умолчанию на $IGPU_NAME, NVIDIA — через prime-run${R}"
+    explain "Браузер, плеер, мессенджеры не будят NVIDIA. Игры и тяжёлые программы: prime-run steam"
+    ask "Программы на $IGPU_NAME, NVIDIA через prime-run? (рекомендуется)" && DO_APPS=1
+fi
 echo
 ask "Продолжить?" || { info "Ничего не изменено"; exit 0; }
 
@@ -118,7 +159,7 @@ sudo -v || exit 1
 [ ${#missing[@]} -eq 0 ] || step "Пакеты ${missing[*]}" sudo pacman -S --needed --noconfirm "${missing[@]}"
 
 if [ -n "$dev_daemon" ]; then
-    # dev-run.sh при выходе снимает временную маску asusd и запускает его — дальше мы его выключим насовсем
+    # пробный демон из dev-run.sh — заменяется службой
     step "Остановка пробного демона" sudo kill $dev_daemon
     sleep 3
 fi
@@ -166,22 +207,39 @@ else
     ok "Настройки /etc/asus-helper сохранены"
 fi
 
-# ---------- 5. старое выключаем ----------
-title "Замена asusd и старых помощников"
-if unit_exists asusd.service; then
-    sudo systemctl unmask --runtime asusd.service >/dev/null 2>&1   # временная маска от dev-run.sh
-    step "asusd выключен (mask)" sudo systemctl mask --now asusd.service asus-shutdown.service
-fi
-if unit_exists gpu-eco-fixup.service && systemctl is-enabled -q gpu-eco-fixup.service 2>/dev/null; then
-    step "gpu-eco-fixup выключен" sudo systemctl disable --now gpu-eco-fixup.service
-fi
-if user_unit_exists asus-osd.service && systemctl --user is-enabled -q asus-osd.service 2>/dev/null; then
-    step "asus-osd выключен" systemctl --user disable --now asus-osd.service
-fi
-
+# ---------- 5. служба ----------
 step "Демон asus-helperd запущен и включён" sudo systemctl enable --now asus-helperd.service
 
-# ---------- 6. рабочий стол ----------
+# ---------- 6. встроенная видеокарта ----------
+ENVD="$HOME/.config/environment.d"
+if [ $DO_KWIN = 1 ]; then
+    install_kwin() {
+        echo "SUBSYSTEM==\"drm\", KERNEL==\"card*\", KERNELS==\"$IGPU_PCI\", SYMLINK+=\"dri/igpu\"" \
+            | sudo tee /etc/udev/rules.d/61-igpu-symlink.rules >/dev/null &&
+        sudo udevadm control --reload &&
+        sudo udevadm trigger --subsystem-match=drm --action=add &&
+        sudo udevadm settle &&
+        [ -e /dev/dri/igpu ] &&
+        mkdir -p "$ENVD" &&
+        echo "KWIN_DRM_DEVICES=/dev/dri/igpu" > "$ENVD/90-kwin-igpu.conf"
+    }
+    step "Рабочий стол на $IGPU_NAME (/dev/dri/igpu)" install_kwin
+fi
+if [ $DO_APPS = 1 ]; then
+    install_apps() {
+        local icds
+        icds=$(ls /usr/share/vulkan/icd.d/$ICD_GLOB 2>/dev/null | paste -sd:)
+        mkdir -p "$ENVD" && {
+            echo "__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json"
+            echo "__GLX_VENDOR_LIBRARY_NAME=mesa"
+            [ -n "$icds" ] && echo "VK_DRIVER_FILES=$icds"
+        } > "$ENVD/91-igpu-apps.conf" &&
+        sudo install -m 755 "$SRC/data/prime-run" "$BIN/prime-run"
+    }
+    step "Программы на $IGPU_NAME, NVIDIA через prime-run" install_apps
+fi
+
+# ---------- 7. рабочий стол ----------
 title "Значок и окно"
 install_desktop() {
     install -Dm644 "$SRC/data/icons/asus-helper.svg" "$ICONS/asus-helper.svg" &&
@@ -197,18 +255,18 @@ sleep 1
 ( setsid "$BIN/asus-helper" >/dev/null 2>&1 & )
 ok "Asus-helper запущен — значок в трее"
 
-# ---------- 7. проверка ----------
+# ---------- 8. проверка ----------
 title "Проверка"
 sleep 2
 if systemctl is-active -q asus-helperd; then ok "asus-helperd работает"; else fail "asus-helperd не запустился: journalctl -u asus-helperd"; FAILED=1; fi
 if "$BIN/asus-helper-cli" >>"$LOG" 2>&1; then ok "Демон отвечает"; else fail "Демон не отвечает (журнал: $LOG)"; FAILED=1; fi
-if systemctl is-active -q asusd 2>/dev/null; then warn "asusd всё ещё работает"; else ok "asusd выключен"; fi
 
 title "Итог"
 for r in "${RESULTS[@]}"; do echo "  $r"; done
 echo
 if [ $FAILED -eq 0 ]; then
     echo "  ${GREEN}${B}Готово.${R} Значок Asus-helper — в трее; клавиша ROG открывает окно."
+    [ $DO_KWIN = 1 ] || [ $DO_APPS = 1 ] && echo "  ${YELLOW}Выйди из сеанса и войди снова${R} — чтобы рабочий стол перешёл на $IGPU_NAME."
 else
     echo "  ${YELLOW}${B}Установлено с ошибками.${R} Журнал: $LOG"
 fi
@@ -216,6 +274,6 @@ cat <<EOF
 
   ${D}Терминал:  asus-helper-cli          (состояние и команды)
   Журнал:    journalctl -u asus-helperd -f
-  Удаление:  ./uninstall.sh            (вернёт asusd и старые помощники)${R}
+  Удаление:  ./uninstall.sh${R}
 
 EOF

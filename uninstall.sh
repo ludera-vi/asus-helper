@@ -1,5 +1,5 @@
 #!/bin/bash
-# Удаление Asus-helper и возврат как было: asusd, asus-shutdown, gpu-eco-fixup, asus-osd снова включаются.
+# Удаление Asus-helper: демон, значок, ярлыки, рабочий стол на встроенной видеокарте и prime-run.
 #   ./uninstall.sh           настройки /etc/asus-helper остаются
 #   ./uninstall.sh --purge   и настройки тоже
 
@@ -8,7 +8,7 @@ B=$'\e[1m'; R=$'\e[0m'; GREEN=$'\e[32m'
 ok() { echo "  ${GREEN}✔${R} $*"; }
 
 [ $EUID -ne 0 ] || { echo "Запускай от обычного пользователя: ./uninstall.sh"; exit 1; }
-read -rp "Удалить Asus-helper и вернуть asusd? [д/Н] " a
+read -rp "Удалить Asus-helper? [д/Н] " a
 [[ "$a" =~ ^([YyДд]|да)$ ]] || exit 0
 sudo -v || exit 1
 
@@ -27,12 +27,19 @@ sudo busctl call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus
 sudo systemctl daemon-reload
 ok "Демон удалён"
 
-if systemctl cat asusd.service >/dev/null 2>&1; then
-    sudo systemctl unmask asusd.service asus-shutdown.service
-    sudo systemctl start asusd.service && ok "asusd снова работает"
+# NVIDIA не должна остаться выключенной в BIOS без программы, которая умеет её включить
+dgpu=/sys/class/firmware-attributes/asus-armoury/attributes/dgpu_disable/current_value
+if [ "$(cat $dgpu 2>/dev/null)" = 1 ]; then
+    read -rp "NVIDIA выключена (Eco). Включить перед удалением? [Д/н] " a
+    if [[ ! "$a" =~ ^[НнNn] ]]; then
+        echo 0 | sudo tee $dgpu >/dev/null && sudo sh -c 'sleep 2; echo 1 > /sys/bus/pci/rescan' && ok "NVIDIA включена (драйвер загрузится после перезагрузки)"
+    fi
 fi
-systemctl cat gpu-eco-fixup.service >/dev/null 2>&1 && sudo systemctl enable --now gpu-eco-fixup.service && ok "gpu-eco-fixup включён"
-systemctl --user cat asus-osd.service >/dev/null 2>&1 && systemctl --user enable --now asus-osd.service && ok "asus-osd включён"
+
+rm -f ~/.config/environment.d/90-kwin-igpu.conf ~/.config/environment.d/91-igpu-apps.conf
+sudo rm -f /etc/udev/rules.d/61-igpu-symlink.rules /usr/local/bin/prime-run
+sudo udevadm control --reload
+ok "Рабочий стол на встроенной видеокарте и prime-run убраны (выйди из сеанса и войди снова)"
 
 if [ "${1:-}" = --purge ]; then
     sudo rm -rf /etc/asus-helper && rm -rf ~/.config/asus-helper && ok "Настройки удалены"

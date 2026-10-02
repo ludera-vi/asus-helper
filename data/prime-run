@@ -1,0 +1,18 @@
+#!/bin/bash
+# prime-run из Asus-helper — запуск программы на NVIDIA.
+# Снимает «по умолчанию встроенная видеокарта» из ~/.config/environment.d/91-igpu-apps.conf.
+# Если NVIDIA выключена (Eco), программа запустится на встроенной видеокарте и будет предупреждение.
+
+dgpu=/sys/class/firmware-attributes/asus-armoury/attributes/dgpu_disable/current_value
+[ -e $dgpu ] || dgpu=/sys/devices/platform/asus-nb-wmi/dgpu_disable
+
+if [ "$(cat $dgpu 2>/dev/null)" = 1 ]; then
+    msg="NVIDIA выключена (Eco) — «$(basename "${1:-программа}")» запущена на встроенной видеокарте. Включить: Asus-helper → Видеокарта → Стандарт"
+    echo "$msg" >&2
+    command -v notify-send >/dev/null && notify-send -a Asus-helper -i asus-helper NVIDIA "$msg"
+    exec "$@"
+fi
+
+unset __EGL_VENDOR_LIBRARY_FILENAMES VK_DRIVER_FILES
+export __NV_PRIME_RENDER_OFFLOAD=1 __VK_LAYER_NV_optimus=NVIDIA_only __GLX_VENDOR_LIBRARY_NAME=nvidia
+exec "$@"
