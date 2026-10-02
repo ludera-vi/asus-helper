@@ -37,15 +37,15 @@ PROFILE_NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance
 GPU_NAMES = {"off": "выключена (Eco)", "suspended": "спит", "active": "работает", "missing": "без драйвера"}
 
 
-# Значок: цвет — режим (Тихий зелёный, Баланс синий, Турбо красный), фиолетовая полоска снизу —
-# NVIDIA включена (нет полоски — выключена). «Авто» — настройка, а не состояние: видно в подсказке и окне.
+# Значок: цвет — режим (Тихий зелёный, Баланс синий, Турбо красный), фиолетовая точка в правом нижнем
+# углу — NVIDIA включена (нет точки — выключена). «Авто» — настройка, а не состояние: видно в подсказке и окне.
 PROFILE_FILL = {"quiet": "#27ae60", "balanced": "#3daee9", "performance": "#da4453"}
 DEFAULT_FILL = "#7f8c8d"
 GPU_ON = "#a35bd8"
 
 
 def make_icon(fill: str, gpu_on: bool, dim: bool = False) -> QIcon:
-    """Скруглённый квадрат цвета режима с буквами AH; gpu_on — фиолетовая полоска снизу;
+    """Скруглённый квадрат цвета режима с буквами AH; gpu_on — фиолетовая точка в правом нижнем углу;
     dim — идёт переключение видеокарты (бледнее)."""
     icon = QIcon()
     for size in (16, 22, 24, 32, 48, 64, 128):
@@ -60,24 +60,21 @@ def make_icon(fill: str, gpu_on: bool, dim: bool = False) -> QIcon:
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(fill))
         p.drawRoundedRect(rect, size * 0.22, size * 0.22)
-        text_rect = QRectF(rect)
-        if gpu_on:
-            h = max(4.0, size * 0.24)
-            top = size - m - h
-            # нижняя часть того же скруглённого квадрата — фиолетовая, над ней тонкая тень
-            p.setClipRect(QRectF(0, top, size, h + m))
-            p.setBrush(QColor(GPU_ON))
-            p.drawRoundedRect(rect, size * 0.22, size * 0.22)
-            p.setClipping(False)
-            p.setBrush(QColor(0, 0, 0, 90))
-            p.drawRect(QRectF(rect.left(), top, rect.width(), max(1.0, size * 0.03)))
-            text_rect = QRectF(rect.left(), rect.top(), rect.width(), rect.height() - h)
         font = QFont()
         font.setBold(True)
-        font.setPixelSize(max(7, round(size * (0.42 if gpu_on else 0.48))))
+        font.setPixelSize(max(7, round(size * 0.48)))
         p.setFont(font)
         p.setPen(QColor("white"))
-        p.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "AH")
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "AH")
+        if gpu_on:
+            d = max(9.0, size * 0.38)          # в трее (22 px) — не меньше 9 px
+            dot = QRectF(size - d, size - d, d, d)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor("#232629"))      # тёмная обводка — точку видно на любом цвете
+            p.drawEllipse(dot)
+            o = max(1.0, d * 0.16)
+            p.setBrush(QColor(GPU_ON))
+            p.drawEllipse(dot.adjusted(o, o, -o, -o))
         p.end()
         icon.addPixmap(pm)
     return icon
