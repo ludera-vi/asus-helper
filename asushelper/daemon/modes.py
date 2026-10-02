@@ -103,9 +103,21 @@ class Modes:
                   if (c := self.config.profile(name)["fan_curves"].get(f)) and c.get("enabled", True)}
         # Сначала вернуть BIOS-кривые, потом ставить свои: ядро при pwmN_enable=2 заново пишет режим
         # в BIOS, а это сбрасывает свою кривую и у другого вентилятора.
+        factory = self.config.data.setdefault("factory_curves", {}).setdefault(name, {})
+        learned = False
         for fan in present:
-            if fan not in curves and (hw.fan_curve(fan) or {}).get("enabled"):
+            if fan in curves:
+                continue
+            if fan not in factory:
+                # запомнить заводскую кривую этого режима (сброс точек в ядре → чтение → кривая BIOS)
+                if c := hw.factory_fan_curve(fan):
+                    factory[fan] = {"temp": c["temp"], "pwm": c["pwm"]}
+                    learned = True
+            elif (hw.fan_curve(fan) or {}).get("enabled"):
                 hw.set_fan_curve_mode(fan, hw.CURVE_BIOS)
+        if learned:
+            log.info("%s: запомнены заводские кривые %s", name, ", ".join(factory))
+            self.config.save()
         for fan, c in curves.items():
             hw.set_fan_curve(fan, c["temp"], c["pwm"])
         log.info("%s: кривые вентиляторов применены", name)

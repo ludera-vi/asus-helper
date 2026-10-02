@@ -370,6 +370,9 @@ class Service:
         if not hw.has_fan_curves():
             raise Failed("ядро не поддерживает свои кривые вентиляторов")
         curves = {f: hw.factory_fan_curve(f) for f in hw.curve_fans()}
+        cache = self.config.data.setdefault("factory_curves", {}).setdefault(self.modes.current, {})
+        cache.update({f: {"temp": c["temp"], "pwm": c["pwm"]} for f, c in curves.items() if c})
+        self.config.save()
         self.modes.reapply("после чтения заводских кривых")   # вернуть свои кривые, если были
         return json.dumps({"profile": self.modes.current, "curves": curves})
 

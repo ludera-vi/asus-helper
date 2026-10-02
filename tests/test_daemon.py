@@ -178,6 +178,17 @@ class ModesTest(unittest.TestCase):
         finally:
             sysfs.write = orig
         enables = [w for w in writes if w[0].endswith("_enable")]
+        # GPU: при первом включении режима — узнать заводскую (3) и вернуть BIOS (2); CPU своя — последней
+        self.assertEqual(enables, [("pwm2_enable", "3"), ("pwm2_enable", "2"), ("pwm1_enable", "1")])
+        # второй раз заводская уже известна — только вернуть BIOS, потом своя
+        writes.clear()
+        hw.set_fan_curve_mode("gpu", hw.CURVE_ON)
+        sysfs.write = lambda p, v: writes.append((p.rsplit("/", 1)[1], str(v))) or orig(p, v)
+        try:
+            self.modes._apply_fans("performance")
+        finally:
+            sysfs.write = orig
+        enables = [w for w in writes if w[0].endswith("_enable")]
         self.assertEqual(enables, [("pwm2_enable", "2"), ("pwm1_enable", "1")])
 
     def test_quick_switch_cancels_previous(self):
@@ -431,3 +442,34 @@ class GpuDisplayTest(unittest.TestCase):
             self.assertIn("монитор", str(e.exception))
         finally:
             self.gpu.bios_off = saved
+
+
+class FactoryCurvesTest(unittest.TestCase):
+    """Кривые режимов независимы; заводская кривая запоминается для каждого режима отдельно."""
+
+    def setUp(self):
+        fakesys.build(ROOT)
+        self.cfg = Config(os.path.join(CONF, "factory.json"))
+        self.modes = Modes(self.cfg, lambda: None)
+
+    def test_learns_factory_once_per_profile(self):
+        self.modes._apply_fans("balanced")
+        f = self.cfg.data["factory_curves"]
+        self.assertEqual(set(f["balanced"]), {"cpu", "gpu"})
+        self.assertNotIn("quiet", f)
+        # кривая BIOS после запоминания
+        self.assertEqual(fakesys.read(ROOT, CURVE + "/pwm1_enable"), "2")
+        # второй раз не перечитывает (точки в ядре меняем — кэш не должен поменяться)
+        fakesys._w(ROOT, CURVE + "/pwm1_auto_point1_temp", 99)
+        self.modes._apply_fans("balanced")
+        self.assertNotEqual(f["balanced"]["cpu"]["temp"][0], 99)
+
+    def test_custom_curve_only_in_its_profile(self):
+        quiet = {"enabled": True, "temp": [30, 40, 50, 60, 70, 80, 90, 95], "pwm": [0, 10, 20, 40, 80, 120, 200, 255]}
+        self.cfg.data["profiles"]["quiet"]["fan_curves"]["cpu"] = quiet
+        self.modes._apply_fans("quiet")
+        self.assertEqual(fakesys.read(ROOT, CURVE + "/pwm1_enable"), "1")
+        self.modes._apply_fans("balanced")
+        self.assertEqual(fakesys.read(ROOT, CURVE + "/pwm1_enable"), "2")    # в Балансе — BIOS
+        self.assertIsNone(self.cfg.data["profiles"]["balanced"]["fan_curves"]["cpu"])
+        self.assertIsNone(self.cfg.data["profiles"]["performance"]["fan_curves"]["cpu"])

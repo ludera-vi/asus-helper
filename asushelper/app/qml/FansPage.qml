@@ -90,6 +90,8 @@ ColumnLayout {
             required property var modelData
             readonly property string fan: modelData.fan
             readonly property var saved: (page.pcfg.fan_curves || {})[fan] || null
+            readonly property var factoryCurve: ((page.factory[page.profile] || {})[fan])
+                || (((page.cfg.factory_curves || {})[page.profile] || {})[fan]) || null
             readonly property real rpm: (page.st.fans || {})[fan] || 0
             property bool dirty: false
 
@@ -102,6 +104,8 @@ ColumnLayout {
                 id: custom
                 text: "Своя кривая"
                 checked: fanSection.saved !== null
+                // начинать свою кривую можно только с известной (своей или заводской)
+                enabled: fanSection.saved !== null || fanSection.factoryCurve !== null
                 onToggled: {
                     if (!checked) { backend.resetFanCurve(page.profile, fanSection.fan); fanSection.dirty = false }
                     else fanSection.dirty = true
@@ -110,8 +114,19 @@ ColumnLayout {
                 QQC2.ToolTip.text: "Выключено — вентилятором управляет BIOS по своей заводской кривой"
             }
 
+            QQC2.Label {
+                Layout.fillWidth: true
+                visible: !editor.known
+                wrapMode: Text.Wrap
+                opacity: 0.7
+                text: "Заводская кривая режима «" + Theme.profileName(page.profile) + "» ещё неизвестна — "
+                      + "она появится, когда этот режим хотя бы раз будет включён"
+            }
+
             FanCurve {
                 id: editor
+                property bool known: true
+                visible: known
                 Layout.fillWidth: true
                 editable: custom.checked
                 accent: Theme.profileColor(page.profile)
@@ -120,10 +135,10 @@ ColumnLayout {
                     : (backend.nvidia && backend.nvidia.temp !== undefined ? backend.nvidia.temp : NaN)
                 onEdited: fanSection.dirty = true
 
+                // своя кривая этого режима, иначе его заводская (из BIOS); чужих точек не показываем
                 function load() {
-                    const c = fanSection.saved
-                    || ((page.factory[page.profile] || {})[fanSection.fan])
-                    || (page.isCurrent && page.st.fan_curves ? page.st.fan_curves[fanSection.fan] : null)
+                    const c = fanSection.saved || fanSection.factoryCurve
+                    known = !!c
                     if (c) { temp = c.temp.slice(); pwm = c.pwm.slice() }
                     fanSection.dirty = false
                 }
@@ -136,6 +151,7 @@ ColumnLayout {
                     function onFactoryLoaded() { editor.loadFactory() }
                     function onProfileChanged() { editor.load() }
                     function onPcfgChanged() { if (!fanSection.dirty) editor.load() }
+                    function onCfgChanged() { if (!fanSection.dirty) editor.load() }
                 }
                 Component.onCompleted: load()
             }
