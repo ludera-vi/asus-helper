@@ -12,9 +12,9 @@ asus-helperd (root, systemd)          — единственный, кто пи�
   ├─ видеокарта: Eco / Стандарт / Оптимальный (бывший gpu-eco)
   ├─ подсветка клавиатуры: яркость и Aura по HID (вместо asusd)
   └─ эмуляция power-profiles-daemon → KDE видит режимы (виджет батареи)
-asus-helper-agent (сеанс пользователя)  — карточки KDE: режим, подсветка; уведомления о видеокарте (бывший asus-osd)
+asus-helper-agent (сеанс пользователя)  — карточки KDE без окна (если окно не нужно)
 asus-helper-cli                       — управление из терминала
-asushelper (Qt/QML, в трее)          — интерфейс (этап 5)
+asus-helper (Qt/QML, в трее)          — окно, карточки KDE, экран
 ```
 
 | Каталог | Что |
@@ -23,7 +23,7 @@ asushelper (Qt/QML, в трее)          — интерфейс (этап 5)
 | `asushelper/cli.py` | `asus-helper-cli` |
 | `asushelper/asusd_import.py` | перенос настроек из `/etc/asusd` |
 | `data/` | systemd, D-Bus, polkit |
-| `gpu-switch/`, `lighting_keyboard/` | прежние программы (переносятся в asushelper на этапах 3–5) |
+| `gpu-switch/`, `lighting_keyboard/` | прежние программы — всё перенесено в Asus-helper, оставлены для истории |
 
 ## Что умеет
 
@@ -41,8 +41,8 @@ asushelper (Qt/QML, в трее)          — интерфейс (этап 5)
 ## Установка
 
 ```bash
-./install.sh      # снимок snapper → служба asus-helperd, значок в трее; asusd выключается (не удаляется)
-./uninstall.sh    # вернуть как было
+./install.sh      # на систему без asusctl / power-profiles-daemon / supergfxctl / envycontrol: снимок → служба, значок, iGPU
+./uninstall.sh    # удалить (настройки /etc/asus-helper остаются; --purge — и их)
 ```
 
 Для разработки без установки: `sudo ./dev-run.sh` (демон в терминале) и `python3 -m asushelper.app --show`.
