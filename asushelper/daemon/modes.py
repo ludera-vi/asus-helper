@@ -13,7 +13,7 @@ import subprocess
 
 from gi.repository import GLib
 
-from .. import FANS, PROFILES
+from .. import PROFILES
 from . import hardware as hw
 from . import sysfs
 from .config import Config
@@ -98,11 +98,12 @@ class Modes:
     def _apply_fans(self, name: str) -> None:
         if not hw.has_fan_curves():
             return
-        curves = {f: c for f in FANS
+        present = hw.curve_fans()
+        curves = {f: c for f in present
                   if (c := self.config.profile(name)["fan_curves"].get(f)) and c.get("enabled", True)}
         # Сначала вернуть BIOS-кривые, потом ставить свои: ядро при pwmN_enable=2 заново пишет режим
         # в BIOS, а это сбрасывает свою кривую и у другого вентилятора.
-        for fan in FANS:
+        for fan in present:
             if fan not in curves and (hw.fan_curve(fan) or {}).get("enabled"):
                 hw.set_fan_curve_mode(fan, hw.CURVE_BIOS)
         for fan, c in curves.items():

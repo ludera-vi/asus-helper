@@ -21,6 +21,10 @@ ColumnLayout {
         ppt_pl1_spl: ["Процессор, долго", "PL1 — сколько CPU берёт под длительной нагрузкой", " Вт"],
         ppt_pl2_sppt: ["Процессор, рывком", "PL2 — короткий разгон на несколько секунд", " Вт"],
         ppt_fppt: ["Процессор, пик", "fPPT — самые короткие всплески", " Вт"],
+        ppt_pl3_fppt: ["Процессор, пик", "PL3/fPPT — самые короткие всплески", " Вт"],
+        ppt_apu_sppt: ["Процессор (APU), рывком", "sPPT встроенного графического ядра AMD", " Вт"],
+        ppt_platform_sppt: ["Вся платформа, рывком", "общий лимит процессора и видеокарты", " Вт"],
+        nv_base_tgp: ["NVIDIA, базовая мощность", "базовый TGP видеокарты", " Вт"],
         nv_dynamic_boost: ["NVIDIA Dynamic Boost", "сколько ватт CPU может отдать видеокарте", " Вт"],
         nv_temp_target: ["NVIDIA, предел температуры", "выше — карта замедляется", " °C"],
         nv_tgp: ["NVIDIA TGP", "мощность видеокарты", " Вт"],
@@ -34,7 +38,7 @@ ColumnLayout {
             const f = Object.assign({}, page.factory)
             f[r.profile] = r.curves
             page.factory = f
-            for (const ed of [page.cpuEditor, page.gpuEditor]) if (ed) ed.loadFactory()
+            page.factoryLoaded()
         }
     }
 
@@ -78,7 +82,9 @@ ColumnLayout {
 
     // ---------- кривые ----------
     Repeater {
-        model: [{ fan: "cpu", name: "Вентилятор процессора" }, { fan: "gpu", name: "Вентилятор видеокарты" }]
+        // вентиляторы, которым этот ноутбук позволяет задать кривую
+        model: Object.keys(page.st.fan_curves || {}).map(f => ({
+            fan: f, name: ({ cpu: "Вентилятор процессора", gpu: "Вентилятор видеокарты", mid: "Средний вентилятор" })[f] || f }))
         delegate: Section {
             id: fanSection
             required property var modelData
@@ -91,7 +97,6 @@ ColumnLayout {
             iconName: "temperature-normal-symbolic"
             info: page.isCurrent && rpm ? rpm + " об/мин" : ""
 
-            Component.onCompleted: { if (fan === "cpu") page.cpuEditor = editor; else page.gpuEditor = editor }
 
             QQC2.Switch {
                 id: custom
@@ -111,7 +116,7 @@ ColumnLayout {
                 editable: custom.checked
                 accent: Theme.profileColor(page.profile)
                 currentTemp: !page.isCurrent ? NaN
-                    : fanSection.fan === "cpu" ? (page.st.cpu_temp || NaN)
+                    : fanSection.fan !== "gpu" ? (page.st.cpu_temp || NaN)
                     : (backend.nvidia && backend.nvidia.temp !== undefined ? backend.nvidia.temp : NaN)
                 onEdited: fanSection.dirty = true
 
@@ -128,6 +133,7 @@ ColumnLayout {
                 }
                 Connections {
                     target: page
+                    function onFactoryLoaded() { editor.loadFactory() }
                     function onProfileChanged() { editor.load() }
                     function onPcfgChanged() { if (!fanSection.dirty) editor.load() }
                 }
@@ -251,6 +257,5 @@ ColumnLayout {
         }
     }
 
-    property var cpuEditor
-    property var gpuEditor
+    signal factoryLoaded()
 }

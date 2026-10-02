@@ -3,7 +3,7 @@
 __version__ = "0.1.0"
 
 PROFILES = ("quiet", "balanced", "performance")
-FANS = ("cpu", "gpu")
+FANS = ("cpu", "gpu", "mid")   # какие есть у ноутбука — hardware.fans() / curve_fans()
 
 # D-Bus
 BUS_NAME = "org.asushelper.Daemon"

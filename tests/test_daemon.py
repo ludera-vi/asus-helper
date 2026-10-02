@@ -241,12 +241,13 @@ class AuraTest(unittest.TestCase):
 
     def test_apply_writes_feature_reports(self):
         from asushelper.daemon import aura
-        self.assertEqual(aura.find_device(), "/dev/hidraw0")
+        self.assertEqual(aura.find_device()["dev"], "/dev/hidraw0")
+        self.assertEqual(aura.rgb_method(), "hid")
         cfg = {"mode": "static", "color": "#80A68E", "color2": "#000000", "speed": "normal",
                "awake": True, "boot": True, "sleep": True, "shutdown": True}
         self.assertTrue(aura.apply(cfg))
         data = open(ROOT + "/dev/hidraw0", "rb").read()
-        reports = [data[i:i + aura.FEATURE_LEN] for i in range(0, len(data), aura.FEATURE_LEN)]
+        reports = [data[i:i + 63] for i in range(0, len(data), 63)]
         self.assertEqual([r[1] for r in reports], [0xB9, ord("A"), 0xB3, 0xB5, 0xB4, 0xBD])
         self.assertTrue(all(len(r) == 63 and r[0] == 0x5D for r in reports))
 
@@ -292,7 +293,8 @@ class SlashTest(unittest.TestCase):
 
     def test_apply_sequence(self):
         from asushelper.daemon import slash
-        self.assertEqual(slash.find_device(), "/dev/hidraw1")
+        self.assertEqual(slash.find_device(), ("/dev/hidraw1", 0x5E, 128))
+        self.assertEqual(slash.segments(), 7)
         cfg = {"brightness": 2, "mode": "flow", "interval": 1, "on_battery": True, "lid_closed": False}
         self.assertTrue(slash.apply(cfg, wake=True))
         data = open(ROOT + "/dev/hidraw1", "rb").read()
@@ -323,3 +325,44 @@ class BoostTest(unittest.TestCase):
         self.assertEqual(fakesys.read(ROOT, hw.NO_TURBO), "1")
         modes._apply_power("performance")
         self.assertEqual(fakesys.read(ROOT, hw.NO_TURBO), "0")
+
+
+class GenericTest(unittest.TestCase):
+    def setUp(self):
+        fakesys.build(ROOT)
+
+    def test_descriptor_parser(self):
+        from asushelper.daemon import hid
+        # два отчёта: input 0x5d (не считается) и feature 0x5d 62 байта, feature 0x5a 16 байт
+        d = bytes([0x85, 0x5D, 0x75, 0x08, 0x95, 0x20, 0x81, 0x00, 0x95, 0x3E, 0xB1, 0x00,
+                   0x85, 0x5A, 0x95, 0x10, 0xB1, 0x00])
+        self.assertEqual(hid.feature_lengths(d), {0x5D: 62, 0x5A: 16})
+
+    def test_model_and_fans(self):
+        self.assertEqual(hw.model()["name"], "ROG Zephyrus G16 GU605MZ")
+        self.assertEqual(hw.fans(), ["cpu", "gpu"])
+        self.assertEqual(hw.curve_fans(), ["cpu", "gpu"])
+
+    def test_amd_fallbacks(self):
+        os.remove(ROOT + hw.NO_TURBO)
+        fakesys._w(ROOT, hw.BOOST, 1)
+        self.assertTrue(hw.turbo())
+        self.assertTrue(hw.set_turbo(False))
+        self.assertEqual(fakesys.read(ROOT, hw.BOOST), "0")
+        import shutil
+        shutil.rmtree(ROOT + "/sys/class/hwmon/hwmon9")
+        fakesys._w(ROOT, "/sys/class/hwmon/hwmon9/name", "k10temp")
+        fakesys._w(ROOT, "/sys/class/hwmon/hwmon9/temp1_label", "Tctl")
+        fakesys._w(ROOT, "/sys/class/hwmon/hwmon9/temp1_input", 61000)
+        self.assertEqual(hw.cpu_temp(), 61.0)
+
+    def test_no_hid_keyboard_uses_wmi(self):
+        from asushelper.daemon import aura
+        import shutil
+        shutil.rmtree(ROOT + "/sys/class/hidraw/hidraw0")
+        fakesys._w(ROOT, "/sys/class/leds/asus::kbd_backlight/kbd_rgb_mode", "")
+        self.assertEqual(aura.rgb_method(), "wmi")
+        cfg = {"mode": "breathe", "color": "#FF8000", "color2": "#000000", "speed": "fast",
+               "awake": True, "boot": True, "sleep": True, "shutdown": True}
+        self.assertTrue(aura.apply(cfg))
+        self.assertEqual(fakesys.read(ROOT, "/sys/class/leds/asus::kbd_backlight/kbd_rgb_mode"), "1 1 255 128 0 245")

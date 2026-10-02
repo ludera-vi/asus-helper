@@ -40,7 +40,9 @@ def _attr(name: str) -> str:
 
 
 def supported() -> bool:
-    return sysfs.exists(_attr("dgpu_disable"))
+    """Есть флаг BIOS и есть что выключать: NVIDIA на шине или уже выключена (Eco).
+    Видеокарты AMD не поддерживаются: их драйвер общий со встроенной — выгрузить его нельзя."""
+    return sysfs.exists(_attr("dgpu_disable")) and (bios_off() or find_gpu() is not None)
 
 
 def bios_off() -> bool:

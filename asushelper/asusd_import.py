@@ -28,7 +28,7 @@ def parse_fan_curves(text: str) -> dict:
         for block in re.finditer(r"\(\s*fan:\s*(\w+),\s*pwm:\s*\(([^)]*)\),\s*temp:\s*\(([^)]*)\),\s*enabled:\s*(\w+)", m.group(1)):
             fan, pwm, temp, enabled = block.groups()
             fan = fan.lower()
-            if fan in ("cpu", "gpu"):
+            if fan in ("cpu", "gpu", "mid"):
                 curves[fan] = {"enabled": enabled == "true", "temp": _tuple(temp), "pwm": _tuple(pwm)}
         if curves:
             out[profile] = curves

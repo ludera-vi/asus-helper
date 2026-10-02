@@ -21,6 +21,7 @@
   asus-helper-cli slash [0-3] [АНИМАЦИЯ] [пауза 0-5]   полоса на крышке (0 — выключить)
   asus-helper-cli slash options battery,lid            когда светиться: на батарее, с закрытой крышкой
   asus-helper-cli boost PROFILE on|off                 Turbo Boost процессора в режиме
+  asus-helper-cli diag                 что Asus-helper нашёл у ноутбука (без демона, для отчёта об ошибке)
   asus-helper-cli import-asusd            перенести настройки из /etc/asusd (root, демон остановлен)
 """
 import json
@@ -31,7 +32,7 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
-from . import BUS_NAME, FANS, INTERFACE, OBJECT_PATH, PROFILES
+from . import BUS_NAME, INTERFACE, OBJECT_PATH, PROFILES
 
 NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance": "Турбо"}
 POWER_NAMES = {
@@ -83,6 +84,7 @@ def cmd_status(cl: Client, _args):
     s = cl.state()
     b = s.get("battery") or {}
     boost = "" if s.get("cpu_boost") is None else f", Turbo Boost {'вкл' if s['cpu_boost'] else 'выкл'}"
+    print(f"Ноутбук    : {s['model']['name']}")
     print(f"Режим      : {NAMES.get(s['profile'], s['profile'])}   (EPP {s['epp']}{boost})")
     print(f"Питание    : {'сеть' if s['ac'] else 'батарея'}   "
           f"авто: {'да' if s['auto_profile'] else 'нет'}  "
@@ -91,7 +93,7 @@ def cmd_status(cl: Client, _args):
         wear = f"  износ {100 - b['health']}%" if b.get("health") else ""
         print(f"Батарея    : {b['capacity']}%  {b['status']}  {b['power_w']} Вт  лимит {b['charge_limit']}%{wear}")
     fans = s["fans"]
-    print(f"Вентиляторы: CPU {fans['cpu']} об/мин, GPU {fans['gpu']} об/мин   CPU {s['cpu_temp']} °C")
+    print("Вентиляторы: " + ", ".join(f"{f.upper()} {v} об/мин" for f, v in fans.items()) + f"   CPU {s['cpu_temp']} °C")
     g = s.get("gpu") or {}
     if g.get("supported"):
         users = f"   используют: {', '.join(g['holders'])}" if g.get("holders") else ""
@@ -105,8 +107,7 @@ def cmd_status(cl: Client, _args):
         print(f"Подсветка  : яркость {k.get('brightness')}/{k.get('max', 3)}   {k['mode']} {k['color']}"
               f"{' ' + k['color2'] if k['mode'] == 'breathe' else ''} {k['speed']}")
     if s.get("fan_curves"):
-        for f in FANS:
-            c = s["fan_curves"][f]
+        for f, c in s["fan_curves"].items():
             print(f"  {f.upper()}: {'своя' if c['enabled'] else 'BIOS'}  {fmt_curve(c) if c['enabled'] else ''}")
 
 
@@ -140,9 +141,10 @@ def cmd_epp(cl, args):
 def cmd_fan(cl, args):
     if not args or args[0] in PROFILES:
         cfg = json.loads(cl.call("GetConfig"))
+        present = list(cl.state().get("fan_curves") or {})
         for p in [args[0]] if args else PROFILES:
             print(f"{NAMES[p]}:")
-            for f in FANS:
+            for f in present:
                 print(f"  {f.upper()}: {fmt_curve(cfg['profiles'][p]['fan_curves'][f])}")
     elif args[0] == "set" and len(args) == 4:
         temp, pwm = [], []
@@ -156,8 +158,8 @@ def cmd_fan(cl, args):
     elif args[0] == "factory":
         r = json.loads(cl.call("GetFactoryFanCurves"))
         print(f"Заводские кривые режима {NAMES[r['profile']]}:")
-        for f in FANS:
-            print(f"  {f.upper()}: {fmt_curve(r['curves'][f])}")
+        for f, c in r["curves"].items():
+            print(f"  {f.upper()}: {fmt_curve(c)}")
     else:
         raise Error(__doc__)
 
@@ -273,7 +275,36 @@ def cmd_boost(cl, args):
     cl.call("SetCpuBoost", "sb", args[0], args[1] == "on")
 
 
-COMMANDS = {"slash": cmd_slash, "boost": cmd_boost, "gpu": cmd_gpu, "kbd": cmd_kbd, "aura": cmd_aura, "status": cmd_status, "profile": cmd_profile, "auto": cmd_auto, "charge": cmd_charge,
+def cmd_diag(_cl, _args):
+    """Отчёт о возможностях ноутбука — читает железо напрямую, root и демон не нужны."""
+    import os
+    import platform
+    from .daemon import aura, gpu, hardware as hw, hid, slash
+    m = hw.model()
+    yes = lambda v: "есть" if v else "нет"
+    print(f"Ноутбук        : {m['name']}  ({m['product']}, {m['vendor']})")
+    print(f"Ядро           : {platform.release()}   asus-armoury: {yes(os.path.isdir(hw.ARMOURY))}")
+    print(f"Режимы         : {' '.join(hw.profile_choices()) or 'нет'}  (сейчас {hw.profile()})")
+    print(f"Процессор      : {hw.cpu_driver()}, EPP: {' '.join(hw.epp_choices()) or 'нет'}, "
+          f"Turbo Boost: {'нет' if hw.turbo() is None else 'есть'}, температура: {hw.cpu_temp()} °C")
+    print(f"Вентиляторы    : {', '.join(f'{f} {v} об/мин' for f, v in hw.fan_rpm().items()) or 'нет'}")
+    print(f"Свои кривые    : {', '.join(hw.curve_fans()) or 'нет'}")
+    lim = hw.power_limits()
+    print(f"Лимиты мощности: " + (", ".join(f"{a} {v['min']}–{v['max']}" for a, v in lim.items()) or "нет"))
+    print(f"Переключатели  : " + (", ".join(a for a in hw.TOGGLE_ATTRS if hw.armoury_attr(a)) or "нет"))
+    print(f"Видеокарта     : {'Eco поддерживается' if gpu.supported() else 'нет NVIDIA / нет dgpu_disable'}"
+          f"{'' if gpu.mux_hybrid() else ', MUX: только NVIDIA'}")
+    b = aura.brightness()
+    print(f"Подсветка клав.: яркость {'0–' + str(b['max']) if b else 'нет'}, цвет: {aura.rgb_method() or 'нет'}")
+    sl = slash.find_device()
+    print(f"Slash          : {f'{sl[0]}, отчёт {sl[1]:#x}, {slash.segments()} сегм.' if sl else 'нет'}")
+    bat = hw.battery()
+    print("Батарея        : " + (f"здоровье {bat['health']}%, лимит заряда {bat['charge_limit']}%" if bat else "нет"))
+    print("HID ASUS       : " + ("; ".join(f"{d['dev']} {d['product']:04x} отчёты " + ",".join(f"{k:#x}" for k in d["features"])
+                                         for d in hid.devices()) or "нет"))
+
+
+COMMANDS = {"diag": cmd_diag, "slash": cmd_slash, "boost": cmd_boost, "gpu": cmd_gpu, "kbd": cmd_kbd, "aura": cmd_aura, "status": cmd_status, "profile": cmd_profile, "auto": cmd_auto, "charge": cmd_charge,
             "epp": cmd_epp, "fan": cmd_fan, "power": cmd_power, "import-asusd": cmd_import}
 
 
@@ -289,7 +320,7 @@ def main() -> int:
         print(__doc__)
         return 2
     try:
-        cmd(None if cmd is cmd_import else Client(session), argv[1:])
+        cmd(None if cmd in (cmd_import, cmd_diag) else Client(session), argv[1:])
     except Error as e:
         print(f"ошибка: {e}", file=sys.stderr)
         return 1

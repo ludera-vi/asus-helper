@@ -1,7 +1,10 @@
 # Asus-helper
 
-Своя замена asusd / asusctl / rog-control-center для ASUS ROG Zephyrus G16 GU605MZ, по мотивам
-G-Helper. Режимы, вентиляторы, лимиты мощности, видеокарта, подсветка — одним приложением.
+Замена asusd / asusctl / rog-control-center для ноутбуков ASUS (ROG, TUF, Zephyrus, Strix, Flow) в Linux,
+по мотивам G-Helper. Режимы, вентиляторы, лимиты мощности, видеокарта, подсветка — одним приложением.
+
+Списков моделей нет: всё, что есть у ноутбука, определяется по ядру и HID-устройствам, а окно показывает
+только это. Проверено на ROG Zephyrus G16 GU605MZ; что нашлось у вашего — `asus-helper-cli diag`.
 
 ## Устройство
 

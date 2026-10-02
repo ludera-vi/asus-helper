@@ -15,6 +15,8 @@ ColumnLayout {
     readonly property var st: backend.state || {}
     readonly property var gpu: st.gpu || {}
     readonly property var kbd: st.keyboard || {}
+    // режимы, которые есть у этого ноутбука (до ответа демона — все)
+    readonly property var profiles: Theme.profiles.filter(p => !(st.profiles || []).length || st.profiles.indexOf(p.id) !== -1)
     readonly property var bat: st.battery || {}
     readonly property var fans: st.fans || {}
     readonly property var disp: backend.display || {}
@@ -35,7 +37,7 @@ ColumnLayout {
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
             Repeater {
-                model: Theme.profiles
+                model: page.profiles
                 Tile {
                     required property var modelData
                     text: modelData.name
@@ -185,22 +187,24 @@ ColumnLayout {
 
     // ---------- клавиатура ----------
     Section {
-        visible: page.kbd.mode !== undefined
+        visible: !!page.st.keyboard
         title: "Клавиатура"
-        value: (Theme.auraModes.find(m => m.id === page.kbd.mode) || {}).name || ""
+        value: page.kbd.rgb ? (Theme.auraModes.find(m => m.id === page.kbd.mode) || {}).name || "" : ""
         iconName: "input-keyboard-symbolic"
         info: page.kbd.brightness === 0 ? "подсветка выключена" : ""
 
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
             Repeater {
-                model: ["Выкл", "Низкая", "Средняя", "Высокая"]
+                // уровни яркости — сколько их у этой клавиатуры (обычно 0–3)
+                model: page.kbd.max === 3 || page.kbd.max === undefined ? ["Выкл", "Низкая", "Средняя", "Высокая"]
+                     : Array.from({ length: page.kbd.max + 1 }, (_, i) => i === 0 ? "Выкл" : String(i))
                 Tile {
                     required property string modelData
                     required property int index
                     compact: true
                     text: modelData
-                    accent: page.kbd.color || Theme.highlight
+                    accent: page.kbd.rgb ? page.kbd.color || Theme.highlight : Theme.highlight
                     selected: page.kbd.brightness === index
                     onClicked: backend.setKeyboardBrightness(index)
                 }
@@ -208,6 +212,7 @@ ColumnLayout {
         }
 
         RowLayout {
+            visible: !!page.kbd.rgb
             spacing: Kirigami.Units.smallSpacing
             QQC2.ComboBox {
                 Layout.fillWidth: true

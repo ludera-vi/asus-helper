@@ -1,6 +1,8 @@
-"""Slash — световая полоса на крышке (HID 0b05:193b, feature-отчёт 0x5e, 128 байт).
+"""Slash — световая полоса на крышке ROG (Zephyrus G14/G16 2024+, Flow и др.).
 
-Протокол как в G-Helper (AnimeMatrix/SlashDevice.cs). У GU605 на полосе 7 сегментов.
+Устройство ищется как в G-Helper (SlashDevice.Detect): HID ASUS с feature-отчётом 0x5d длиной ≥ 127
+(новые модели — полоса на устройстве клавиатуры) или с отчётом 0x5e (отдельное устройство, 193b).
+Протокол — AnimeMatrix/SlashDevice.cs. Сегментов 7, у «длинных» полос (GA405, GU405, GU606, GX651) — 35.
   включить/выключить        D8 02 00 01 <00|80>
   режим (анимация)          D2 03 00 0C → прочитать записи, D3 04 … <режим>
   яркость и пауза           D3 03 01 08 AB FF 01 01 06 <яркость> FF <пауза>
@@ -13,14 +15,11 @@ import fcntl
 import logging
 import os
 
-from . import sysfs
+from . import hid, sysfs
 
 log = logging.getLogger(__name__)
 
-VENDOR, PRODUCT = 0x0B05, 0x193B
-REPORT = 0x5E
-FEATURE_LEN = 128
-SEGMENTS = 7
+LONG_MODELS = ("GA405", "GU405", "GU606", "GX651")
 
 # id → (код анимации, название)
 MODES = {
@@ -48,15 +47,14 @@ def _ioc(nr: int, length: int) -> int:
     return (3 << 30) | (length << 16) | (ord("H") << 8) | nr
 
 
-HIDIOCSFEATURE = _ioc(0x06, FEATURE_LEN)
-HIDIOCGFEATURE = _ioc(0x07, FEATURE_LEN)
-
-
-def find_device() -> str | None:
-    want = f"{VENDOR:08X}:{PRODUCT:08X}"
-    for h in sysfs.find("/sys/class/hidraw/hidraw*"):
-        if want in (sysfs.read(h + "/device/uevent") or "").upper():
-            return "/dev/" + os.path.basename(h)
+def find_device() -> tuple[str, int, int] | None:
+    """(устройство, id отчёта, длина отчёта с id) или None."""
+    d = hid.find(0x5D, 127)
+    if d:
+        return d["dev"], 0x5D, d["features"][0x5D] + 1
+    d = hid.find(0x5E, 127)
+    if d:
+        return d["dev"], 0x5E, d["features"][0x5E] + 1
     return None
 
 
@@ -64,13 +62,19 @@ def supported() -> bool:
     return find_device() is not None
 
 
+def segments() -> int:
+    model = (sysfs.read("/sys/class/dmi/id/product_name") or "") + (sysfs.read("/sys/class/dmi/id/board_name") or "")
+    return 35 if any(m in model for m in LONG_MODELS) else 7
+
+
 class Device:
     """Открытое устройство на время одной серии команд."""
 
     def __enter__(self):
-        dev = find_device()
-        if dev is None:
-            raise OSError("полоса Slash (0b05:193b) не найдена")
+        found = find_device()
+        if found is None:
+            raise OSError("полоса Slash не найдена")
+        dev, self.report, self.length = found
         self.fd = os.open(sysfs.path(dev), os.O_RDWR)
         return self
 
@@ -78,22 +82,22 @@ class Device:
         os.close(self.fd)
 
     def set(self, *data: int) -> None:
-        buf = bytearray(FEATURE_LEN)
-        buf[0] = REPORT
+        buf = bytearray(self.length)
+        buf[0] = self.report
         buf[1:1 + len(data)] = bytes(data)
         if sysfs.ROOT:              # тесты: обычный файл
             os.write(self.fd, bytes(buf))
         else:
-            fcntl.ioctl(self.fd, HIDIOCSFEATURE, buf)
+            fcntl.ioctl(self.fd, _ioc(0x06, self.length), buf)
 
     def get(self) -> bytes | None:
         """Ответ устройства на предыдущую команду."""
         if sysfs.ROOT:
             return None
-        buf = bytearray(FEATURE_LEN)
-        buf[0] = REPORT
+        buf = bytearray(self.length)
+        buf[0] = self.report
         try:
-            fcntl.ioctl(self.fd, HIDIOCGFEATURE, buf)
+            fcntl.ioctl(self.fd, _ioc(0x07, self.length), buf)
             return bytes(buf)
         except OSError:
             return None
@@ -138,20 +142,21 @@ class Device:
         self.set(0xD2, 0x02, 0x01, 0x08, 0xAC)
         self.set(0xD3, 0x03, 0x01, 0x08, 0xAC, 0xFF, 0xFF, 0x01, 0x05, 0xFF, 0xFF)
         self.set(0xD4, 0x00, 0x00, 0x01, 0xAC)
-        self.set(0xD3, 0x00, 0x00, SEGMENTS, *segments[:SEGMENTS])
+        n = len(segments)
+        self.set(0xD3, 0x00, 0x00, n, *segments)
 
 
-def battery_pattern(brightness: int, percent: float) -> list[int]:
+def battery_pattern(brightness: int, percent: float, n: int = 7) -> list[int]:
     """Доля полосы по заряду: горят сегменты справа, последний — частично (как в G-Helper)."""
     full = int(brightness * 85.333)   # 3 → 255, как (byte) в G-Helper
-    step = 100 / SEGMENTS
+    step = 100 / n
     lit = int(percent // step)
-    if lit >= SEGMENTS:
-        return [full] * SEGMENTS
-    out = [0] * SEGMENTS
-    for i in range(SEGMENTS - 1, SEGMENTS - 1 - lit, -1):
+    if lit >= n:
+        return [full] * n
+    out = [0] * n
+    for i in range(n - 1, n - 1 - lit, -1):
         out[i] = full
-    out[SEGMENTS - 1 - lit] = round((percent % step) * full / step)
+    out[n - 1 - lit] = round((percent % step) * full / step)
     return out
 
 
@@ -168,7 +173,7 @@ def apply(cfg: dict, battery_percent: float | None = None, wake: bool = False) -
                 return True
             d.enabled(True)
             if cfg["mode"] == "battery":
-                d.custom(battery_pattern(cfg["brightness"], battery_percent or 0))
+                d.custom(battery_pattern(cfg["brightness"], battery_percent or 0, segments()))
                 return True
             d.init()
             d.mode(MODES[cfg["mode"]][0])

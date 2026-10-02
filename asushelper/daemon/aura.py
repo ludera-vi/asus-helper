@@ -1,6 +1,9 @@
-"""Подсветка клавиатуры: яркость (ядро, asus::kbd_backlight) и цвет/эффект Aura (HID 0b05:19b6).
+"""Подсветка клавиатуры: яркость (ядро, *::kbd_backlight) и цвет/эффект Aura.
 
-Протокол Aura как в G-Helper (USB/Aura.cs): feature-отчёт 0x5d.
+Цвет — двумя путями, как в G-Helper:
+  • HID: устройство ASUS с feature-отчётом 0x5d (ROG: Zephyrus, Strix, Flow…);
+  • ядро: /sys/class/leds/*::kbd_backlight/kbd_rgb_mode (TUF и другие модели без HID Aura).
+Протокол HID как в G-Helper (USB/Aura.cs): feature-отчёт 0x5d.
   0x5d B3 <зона> <режим> R G B <скорость> <направление> <случайный> R2 G2 B2 — эффект
   0x5d B5 — применить, 0x5d B4 — сохранить
   0x5d BD 01 <клавиатура> <полоса> <крышка> <задняя> FF — когда светиться (загрузка/работа/сон/выключение)
@@ -10,13 +13,11 @@ import fcntl
 import logging
 import os
 
-from . import sysfs
+from . import hid, sysfs
 
 log = logging.getLogger(__name__)
 
-VENDOR, PRODUCT = 0x0B05, 0x19B6
 REPORT = 0x5D
-FEATURE_LEN = 63          # id отчёта + 62 байта
 
 MODES = {"static": 0, "breathe": 1, "cycle": 2, "strobe": 10}
 SPEEDS = {"slow": 0xE1, "normal": 0xEB, "fast": 0xF5}
@@ -54,14 +55,24 @@ def brightness_hw_changed_path() -> str | None:
     return d + "/brightness_hw_changed" if d and sysfs.exists(d + "/brightness_hw_changed") else None
 
 
-# ---------- Aura (HID) ----------
-def find_device() -> str | None:
-    """/dev/hidrawN клавиатуры Aura."""
-    want = f"{VENDOR:08X}:{PRODUCT:08X}"
-    for h in sysfs.find("/sys/class/hidraw/hidraw*"):
-        uevent = sysfs.read(h + "/device/uevent") or ""
-        if want in uevent.upper():
-            return "/dev/" + os.path.basename(h)
+# ---------- Aura ----------
+def find_device() -> dict | None:
+    """HID-устройство клавиатуры Aura: {dev, product, features}."""
+    return hid.find(REPORT)
+
+
+def _wmi_rgb() -> str | None:
+    """kbd_rgb_mode ядра — для моделей без HID Aura (TUF)."""
+    d = _led()
+    return d + "/kbd_rgb_mode" if d and sysfs.exists(d + "/kbd_rgb_mode") else None
+
+
+def rgb_method() -> str | None:
+    """hid | wmi | None — есть ли у клавиатуры цвет и как им управлять."""
+    if find_device():
+        return "hid"
+    if _wmi_rgb():
+        return "wmi"
     return None
 
 
@@ -96,10 +107,12 @@ APPLY = bytes([REPORT, 0xB4])
 
 
 def send(messages: list[bytes]) -> bool:
-    dev = find_device()
-    if dev is None:
-        log.warning("клавиатура Aura (0b05:19b6) не найдена")
+    found = find_device()
+    if found is None:
+        log.warning("клавиатура Aura (HID ASUS с отчётом 0x5d) не найдена")
         return False
+    dev = found["dev"]
+    length = found["features"][REPORT] + 1      # + id отчёта
     try:
         fd = os.open(sysfs.path(dev), os.O_RDWR)
     except OSError as e:
@@ -107,12 +120,12 @@ def send(messages: list[bytes]) -> bool:
         return False
     try:
         for m in messages:
-            buf = bytearray(FEATURE_LEN)
+            buf = bytearray(length)
             buf[:len(m)] = m
             if sysfs.ROOT:            # тесты: обычный файл вместо устройства
                 os.write(fd, bytes(buf))
             else:
-                fcntl.ioctl(fd, _hidiocsfeature(FEATURE_LEN), buf)
+                fcntl.ioctl(fd, _hidiocsfeature(length), buf)
         return True
     except OSError as e:
         log.warning("Aura: запись не удалась: %s", e)
@@ -123,6 +136,13 @@ def send(messages: list[bytes]) -> bool:
 
 def apply(cfg: dict) -> bool:
     """cfg: {mode, color, color2, speed, awake, boot, sleep, shutdown}"""
+    method = rgb_method()
+    if method == "wmi":
+        # «cmd mode R G B speed»: cmd 1 — применить и сохранить
+        r, g, b = parse_color(cfg["color"])
+        return sysfs.write(_wmi_rgb(), f"1 {MODES[cfg['mode']]} {r} {g} {b} {SPEEDS[cfg['speed']]}")
+    if method is None:
+        return False
     return send([
         *INIT,
         effect_message(cfg["mode"], cfg["color"], cfg.get("color2", "#000000"), cfg["speed"]),

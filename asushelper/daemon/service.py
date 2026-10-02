@@ -9,7 +9,7 @@ import logging
 
 from gi.repository import Gio, GLib
 
-from .. import BUS_NAME, FANS, INTERFACE, OBJECT_PATH, PROFILES, __version__
+from .. import BUS_NAME, INTERFACE, OBJECT_PATH, PROFILES, __version__
 from . import aura
 from . import gpu
 from . import hardware as hw
@@ -115,6 +115,7 @@ class Service:
     def state(self) -> dict:
         return {
             "version": __version__,
+            "model": hw.model(),
             "profile": self.modes.current,
             "profiles": [p for p in PROFILES if p in hw.profile_choices()],
             "ac": self.modes.ac,
@@ -124,7 +125,7 @@ class Service:
             "epp": hw.epp(),
             "epp_choices": hw.epp_choices(),
             "fans": hw.fan_rpm(),
-            "fan_curves": {f: hw.fan_curve(f) for f in FANS} if hw.has_fan_curves() else None,
+            "fan_curves": {f: hw.fan_curve(f) for f in hw.curve_fans()} or None,
             "cpu_temp": hw.cpu_temp(),
             "battery": hw.battery(),
             "power_limits": hw.power_limits(),
@@ -140,8 +141,9 @@ class Service:
                 "switching": self.gpu.busy,
                 "error": self.gpu.last_error,
             },
-            "keyboard": {**self.config.data["keyboard"], **({"brightness": b["value"], "max": b["max"]}
-                                                            if (b := aura.brightness()) else {})},
+            "keyboard": {**self.config.data["keyboard"], "rgb": aura.rgb_method(),
+                         **({"brightness": b["value"], "max": b["max"]} if (b := aura.brightness()) else {})}
+                        if aura.brightness() or aura.rgb_method() else None,
         }
 
     def full_state(self) -> dict:
@@ -336,7 +338,7 @@ class Service:
         """Заводские кривые BIOS для текущего режима — чтобы приложение показало их как отправную точку."""
         if not hw.has_fan_curves():
             raise Failed("ядро не поддерживает свои кривые вентиляторов")
-        curves = {f: hw.factory_fan_curve(f) for f in FANS}
+        curves = {f: hw.factory_fan_curve(f) for f in hw.curve_fans()}
         self.modes.reapply("после чтения заводских кривых")   # вернуть свои кривые, если были
         return json.dumps({"profile": self.modes.current, "curves": curves})
 
@@ -474,8 +476,8 @@ def check_profile(p):
 
 
 def check_fan(f):
-    if f not in FANS:
-        raise Failed(f"неизвестный вентилятор «{f}» (есть: {', '.join(FANS)})")
+    if f not in hw.curve_fans():
+        raise Failed(f"неизвестный вентилятор «{f}» (есть: {', '.join(hw.curve_fans())})")
 
 
 def authorize(bus: Gio.DBusConnection, sender: str, action: str, done) -> None:

@@ -1,4 +1,5 @@
-"""Доступ к железу ноутбука через интерфейсы ядра (asus-wmi, asus-armoury, intel_pstate, power_supply).
+"""Доступ к железу ноутбука через интерфейсы ядра (asus-wmi, asus-armoury, cpufreq, hwmon, power_supply).
+Что есть у конкретной модели — определяется по наличию файлов, списков моделей нет.
 
 Здесь нет логики «когда что применять» — только чтение и запись. Логика в modes.py.
 """
@@ -8,6 +9,21 @@ from .. import FANS
 from . import sysfs
 
 log = logging.getLogger(__name__)
+
+# ---------- модель ----------
+def model() -> dict:
+    """Из DMI: {vendor, family, product, board, name} — name для заголовка окна."""
+    dmi = {k: sysfs.read(f"/sys/class/dmi/id/{f}") or "" for k, f in
+           (("vendor", "sys_vendor"), ("family", "product_family"), ("product", "product_name"), ("board", "board_name"))}
+    family, board = dmi["family"], dmi["board"]
+    # «ROG Zephyrus G16 GU605MZ_GU605MZ» → «ROG Zephyrus G16 GU605MZ»
+    name = f"{family} {board}".strip() if family and board and board not in family else (family or dmi["product"].split("_")[0])
+    return {**dmi, "name": name}
+
+
+def cpu_driver() -> str:
+    return sysfs.read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver") or "unknown"
+
 
 # ---------- режим производительности ----------
 PROFILE = "/sys/firmware/acpi/platform_profile"
@@ -26,7 +42,7 @@ def set_profile(name: str) -> bool:
     return sysfs.write(PROFILE, name)
 
 
-# ---------- EPP процессора (intel_pstate) ----------
+# ---------- EPP процессора (intel_pstate / amd-pstate) ----------
 EPP_GLOB = "/sys/devices/system/cpu/cpu[0-9]*/cpufreq/energy_performance_preference"
 EPP_CHOICES = "/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_available_preferences"
 
@@ -46,25 +62,36 @@ def set_epp(value: str) -> bool:
     return all([sysfs.write(p, value) for p in sysfs.find(EPP_GLOB)])
 
 
-# ---------- Turbo Boost (intel_pstate) ----------
-NO_TURBO = "/sys/devices/system/cpu/intel_pstate/no_turbo"
+# ---------- Turbo Boost / Precision Boost ----------
+NO_TURBO = "/sys/devices/system/cpu/intel_pstate/no_turbo"     # Intel: 1 — выключен
+BOOST = "/sys/devices/system/cpu/cpufreq/boost"                 # AMD и acpi-cpufreq: 1 — включён
 
 
 def turbo() -> bool | None:
-    v = sysfs.read(NO_TURBO)
-    return None if v is None else v == "0"
+    if (v := sysfs.read(NO_TURBO)) is not None:
+        return v == "0"
+    if (v := sysfs.read(BOOST)) is not None:
+        return v == "1"
+    return None
 
 
 def set_turbo(on: bool) -> bool:
-    if turbo() is None:
+    cur = turbo()
+    if cur is None:
         return False
-    return turbo() == on or sysfs.write(NO_TURBO, 0 if on else 1)
+    if cur == on:
+        return True
+    if sysfs.exists(NO_TURBO):
+        return sysfs.write(NO_TURBO, 0 if on else 1)
+    return sysfs.write(BOOST, 1 if on else 0)
 
 
 # ---------- настройки BIOS (asus-armoury) ----------
 ARMOURY = "/sys/class/firmware-attributes/asus-armoury/attributes"
-# Числовые параметры мощности; min/max ядро меняет при переключении сеть ↔ батарея
-POWER_ATTRS = ("ppt_pl1_spl", "ppt_pl2_sppt", "ppt_fppt", "nv_dynamic_boost", "nv_temp_target", "nv_tgp")
+# Числовые параметры мощности (что из них есть — зависит от модели); min/max ядро меняет
+# при переключении сеть ↔ батарея
+POWER_ATTRS = ("ppt_pl1_spl", "ppt_pl2_sppt", "ppt_pl3_fppt", "ppt_fppt", "ppt_apu_sppt", "ppt_platform_sppt",
+               "nv_dynamic_boost", "nv_temp_target", "nv_base_tgp", "nv_tgp")
 # Переключатели 0/1
 TOGGLE_ATTRS = ("panel_overdrive", "boot_sound")
 
@@ -104,9 +131,9 @@ def set_armoury(name: str, value: int) -> bool:
 
 
 # ---------- вентиляторы ----------
-# pwm1 — вентилятор CPU, pwm2 — GPU. Кривая — 8 точек (температура °C → pwm 0–255).
+# pwm1 — вентилятор CPU, pwm2 — GPU, pwm3 — средний (есть не у всех). Кривая — 8 точек (°C → pwm 0–255).
 CURVE_POINTS = 8
-FAN_INDEX = {"cpu": 1, "gpu": 2}
+FAN_INDEX = {"cpu": 1, "gpu": 2, "mid": 3}
 # pwmN_enable у asus_custom_fan_curve: 1 — своя кривая, 2 — кривая BIOS, 3 — сброс точек к заводским
 CURVE_ON, CURVE_BIOS, CURVE_RESET = 1, 2, 3
 
@@ -117,6 +144,18 @@ def _curve_dir() -> str | None:
 
 def has_fan_curves() -> bool:
     return _curve_dir() is not None
+
+
+def curve_fans() -> list[str]:
+    """Вентиляторы, которым можно задать свою кривую."""
+    d = _curve_dir()
+    return [f for f in FANS if d and sysfs.exists(f"{d}/pwm{FAN_INDEX[f]}_enable")]
+
+
+def fans() -> list[str]:
+    """Вентиляторы, у которых ядро показывает обороты."""
+    d = sysfs.hwmon("asus")
+    return [f for f in FANS if d and sysfs.exists(f"{d}/fan{FAN_INDEX[f]}_input")]
 
 
 def fan_curve(fan: str) -> dict | None:
@@ -179,21 +218,28 @@ def factory_fan_curve(fan: str) -> dict | None:
 
 def fan_rpm() -> dict[str, int | None]:
     d = sysfs.hwmon("asus")
-    if d is None:
-        return {f: None for f in FANS}
-    return {f: sysfs.read_int(f"{d}/fan{FAN_INDEX[f]}_input") for f in FANS}
+    return {f: sysfs.read_int(f"{d}/fan{FAN_INDEX[f]}_input") for f in fans()}
 
 
 # ---------- температуры ----------
+# (hwmon, подпись датчика) по порядку: Intel, AMD, запасной вариант ACPI
+CPU_SENSORS = (("coretemp", "Package id 0"), ("k10temp", "Tctl"), ("k10temp", "Tdie"),
+               ("zenpower", "Tdie"), ("acpitz", None))
+
+
 def cpu_temp() -> float | None:
-    """Температура пакета CPU (coretemp «Package id 0»), °C."""
-    d = sysfs.hwmon("coretemp")
-    if d is None:
-        return None
-    for label in sysfs.find(d + "/temp*_label"):
-        if sysfs.read(label) == "Package id 0":
-            v = sysfs.read_int(label.replace("_label", "_input"))
+    """Температура процессора, °C."""
+    for name, label in CPU_SENSORS:
+        d = sysfs.hwmon(name)
+        if d is None:
+            continue
+        if label is None:
+            v = sysfs.read_int(d + "/temp1_input")
             return v / 1000 if v is not None else None
+        for lab in sysfs.find(d + "/temp*_label"):
+            if sysfs.read(lab) == label:
+                v = sysfs.read_int(lab.replace("_label", "_input"))
+                return v / 1000 if v is not None else None
     return None
 
 

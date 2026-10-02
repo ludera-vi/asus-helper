@@ -88,7 +88,7 @@ Window {
                     spacing: 0
                     Kirigami.Heading { level: 3; text: "Asus-helper" }
                     QQC2.Label {
-                        text: backend.connected ? "ROG Zephyrus G16 · " + Theme.profileName((backend.state || {}).profile)
+                        text: backend.connected ? (((backend.state || {}).model || {}).name || "ASUS") + " · " + Theme.profileName((backend.state || {}).profile)
                                                 : "демон не запущен"
                         color: backend.connected ? Kirigami.Theme.textColor : Kirigami.Theme.negativeTextColor
                         font: Kirigami.Theme.smallFont

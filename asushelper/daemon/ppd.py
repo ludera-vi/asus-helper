@@ -11,6 +11,7 @@ import logging
 
 from gi.repository import Gio, GLib
 
+from . import hardware as hw
 from .service import POLKIT_ACTION, Service, authorize
 
 log = logging.getLogger(__name__)
@@ -83,7 +84,7 @@ class PowerProfiles:
 
     def _props(self) -> dict:
         profiles = [{"Profile": GLib.Variant("s", TO_PPD[p]), "Driver": GLib.Variant("s", "asushelper"),
-                     "PlatformDriver": GLib.Variant("s", "asushelper"), "CpuDriver": GLib.Variant("s", "intel_pstate")}
+                     "PlatformDriver": GLib.Variant("s", "asushelper"), "CpuDriver": GLib.Variant("s", hw.cpu_driver())}
                     for p in ("quiet", "balanced", "performance")]
         holds = [{"Profile": GLib.Variant("s", h["profile"]), "Reason": GLib.Variant("s", h["reason"]),
                   "ApplicationId": GLib.Variant("s", h["app"])} for h in self.holds.values()]

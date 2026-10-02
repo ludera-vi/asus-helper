@@ -58,6 +58,14 @@ def build(root: str, ac: bool = False) -> None:
     _w(root, led + "/max_brightness", 3)
     _w(root, "/sys/class/hidraw/hidraw0/device/uevent", "HID_ID=0003:00000B05:000019B6\nHID_NAME=ITE")
     _w(root, "/sys/class/hidraw/hidraw1/device/uevent", "HID_ID=0003:00000B05:0000193B")
+    # дескрипторы: Report ID, Report Size 8, Report Count N, Feature
+    for h, rid, n in (("hidraw0", 0x5D, 62), ("hidraw1", 0x5E, 127)):
+        os.makedirs(f"{root}/sys/class/hidraw/{h}/device", exist_ok=True)
+        with open(f"{root}/sys/class/hidraw/{h}/device/report_descriptor", "wb") as f:
+            f.write(bytes([0x85, rid, 0x75, 0x08, 0x95, n, 0xB1, 0x00]))
+    for k, v in {"sys_vendor": "ASUSTeK COMPUTER INC.", "product_family": "ROG Zephyrus G16",
+                 "product_name": "ROG Zephyrus G16 GU605MZ_GU605MZ", "board_name": "GU605MZ"}.items():
+        _w(root, f"/sys/class/dmi/id/{k}", v)
     _w(root, "/dev/hidraw0", "")
     _w(root, "/dev/hidraw1", "")
     _w(root, "/sys/devices/system/cpu/intel_pstate/no_turbo", 0)
