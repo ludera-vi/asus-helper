@@ -228,6 +228,7 @@ step "Демон перезапущен с новой версией" sudo syste
 
 # ---------- 6. встроенная видеокарта ----------
 ENVD="$HOME/.config/environment.d"
+KWIN_DROPIN_DIR="$HOME/.config/systemd/user/plasma-kwin_wayland.service.d"
 if [ $DO_KWIN = 1 ]; then
     install_kwin() {
         echo "SUBSYSTEM==\"drm\", KERNEL==\"card*\", KERNELS==\"$IGPU_PCI\", SYMLINK+=\"dri/igpu\"" \
@@ -236,8 +237,12 @@ if [ $DO_KWIN = 1 ]; then
         sudo udevadm trigger --subsystem-match=drm --action=add &&
         sudo udevadm settle &&
         [ -e /dev/dri/igpu ] &&
-        mkdir -p "$ENVD" &&
-        echo "KWIN_DRM_DEVICES=/dev/dri/igpu" > "$ENVD/90-kwin-igpu.conf"
+        # только для KWin (и его Xwayland): своя видеокарта и EGL без NVIDIA — иначе libEGL_nvidia
+        # открывает /dev/nvidia* и NVIDIA не выключить. Остальные программы сеанса это не затрагивает.
+        mkdir -p "$KWIN_DROPIN_DIR" &&
+        install -m644 "$SRC/data/kwin-igpu.conf" "$KWIN_DROPIN_DIR/asus-helper-igpu.conf" &&
+        rm -f "$ENVD/90-kwin-igpu.conf" &&
+        systemctl --user daemon-reload
     }
     step "Рабочий стол на $IGPU_NAME (/dev/dri/igpu)" install_kwin
 fi

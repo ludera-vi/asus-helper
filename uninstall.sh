@@ -36,7 +36,9 @@ if [ "$(cat $dgpu 2>/dev/null)" = 1 ]; then
     fi
 fi
 
-rm -f ~/.config/environment.d/90-kwin-igpu.conf ~/.config/environment.d/91-igpu-apps.conf
+rm -f ~/.config/environment.d/90-kwin-igpu.conf ~/.config/environment.d/91-igpu-apps.conf \
+      ~/.config/systemd/user/plasma-kwin_wayland.service.d/asus-helper-igpu.conf
+systemctl --user daemon-reload
 sudo rm -f /etc/udev/rules.d/61-igpu-symlink.rules /usr/local/bin/prime-run
 sudo udevadm control --reload
 ok "Рабочий стол на встроенной видеокарте и prime-run убраны (выйди из сеанса и войди снова)"

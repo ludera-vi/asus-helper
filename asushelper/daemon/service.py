@@ -140,7 +140,7 @@ class Service:
                 "auto_eco": self.config.data["gpu"]["auto_eco"],
                 "switching": self.gpu.busy,
                 "error": self.gpu.last_error,
-                "can_force": self.gpu.can_force,
+                "can_force": self.gpu.can_force and self.gpu.last_error is not None,
             },
             "keyboard": {**self.config.data["keyboard"], "rgb": aura.rgb_method(),
                          **({"brightness": b["value"], "max": b["max"]} if (b := aura.brightness()) else {})}

@@ -237,8 +237,21 @@ class Switcher:
     def __init__(self, on_done):
         self.on_done = on_done      # on_done(error: str | None) — вызывается в главном потоке
         self.busy = False
-        self.last_error: str | None = None
+        self._error: str | None = None
+        self._error_at = 0.0
         self.can_force = False
+
+    # ошибка показывается минуту: потом она уже не про текущее состояние (вышли из сеанса, закрыли игру…)
+    ERROR_TTL = 60
+
+    @property
+    def last_error(self) -> str | None:
+        return self._error if time.monotonic() - self._error_at < self.ERROR_TTL else None
+
+    @last_error.setter
+    def last_error(self, v):
+        self._error = v
+        self._error_at = time.monotonic()
 
     def start(self, want_off: bool, force: bool = False) -> bool:
         if self.busy:
