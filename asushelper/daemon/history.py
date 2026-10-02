@@ -23,7 +23,8 @@ HEALTH_FILE = os.path.join(STATE_DIR, "battery.json")
 
 
 class History:
-    def __init__(self):
+    def __init__(self, paused=lambda: False):
+        self.paused = paused      # True — пропускать замер (BIOS занят переключением видеокарты)
         self.samples = collections.deque(maxlen=KEEP_S // SAMPLE_S)
         self.health = self._load_health()
 
@@ -32,6 +33,8 @@ class History:
         GLib.timeout_add_seconds(SAMPLE_S, self._sample)
 
     def _sample(self) -> bool:
+        if self.paused():
+            return GLib.SOURCE_CONTINUE
         b = hw.battery() or {}
         fans = hw.fan_rpm()
         # мощность со знаком: + разряд, − заряд (у батареи ток всегда положительный — смотрим статус)

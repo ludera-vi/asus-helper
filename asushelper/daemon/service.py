@@ -110,8 +110,9 @@ class Service:
         self.modes = Modes(config, self._changed)
         self.gpu = gpu.Switcher(self._gpu_done)
         self._gpu_cache = {}
+        self._state_cache = {}
         self._gpu_state()
-        self.history = history.History()
+        self.history = history.History(paused=lambda: self.gpu.busy)
         self._last_profile = None
         self._save_brightness = 0
         node = Gio.DBusNodeInfo.new_for_xml(XML)
@@ -119,6 +120,14 @@ class Service:
 
     # ---------- состояние ----------
     def state(self) -> dict:
+        # Пока BIOS включает или выключает NVIDIA (до ~10 с), любое другое обращение к BIOS (WMI) ждёт
+        # своей очереди — и демон перестал бы отвечать. Отдаём последнее состояние, меняем только видеокарту.
+        if self.gpu.busy and self._state_cache:
+            return dict(self._state_cache, gpu=self._gpu_state(), profile=self.modes.current)
+        self._state_cache = self._read_state()
+        return self._state_cache
+
+    def _read_state(self) -> dict:
         return {
             "version": __version__,
             "model": hw.model(),

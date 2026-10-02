@@ -16,8 +16,8 @@ os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "org.kde.desktop")
 import gi  # noqa: E402
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
-from PySide6.QtCore import QMetaObject, QUrl  # noqa: E402
-from PySide6.QtGui import QAction, QIcon  # noqa: E402
+from PySide6.QtCore import QMetaObject, QRectF, Qt, QUrl  # noqa: E402
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
 
@@ -35,6 +35,37 @@ PROFILE_ICONS = {"quiet": "battery-profile-powersave-symbolic", "balanced": "bat
                  "performance": "battery-profile-performance-symbolic"}
 PROFILE_NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance": "Турбо"}
 GPU_NAMES = {"off": "выключена (Eco)", "suspended": "спит", "active": "работает", "missing": "без драйвера"}
+
+
+# Цвет значка — режим видеокарты: Eco зелёный, Стандарт синий, Авто оранжевый (цвета Breeze)
+GPU_COLORS = {"eco": "#27ae60", "standard": "#3daee9", "auto": "#f67400"}
+
+
+def make_icon(color: str, dim: bool = False) -> QIcon:
+    """Скруглённый квадрат с буквами AH. dim — идёт переключение (бледнее)."""
+    icon = QIcon()
+    for size in (16, 22, 24, 32, 48, 64, 128):
+        pm = QPixmap(size, size)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        p.setOpacity(0.45 if dim else 1.0)
+        m = size * 0.04
+        rect = QRectF(m, m, size - 2 * m, size - 2 * m)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(color))
+        p.drawRoundedRect(rect, size * 0.22, size * 0.22)
+        font = QFont()
+        font.setBold(True)
+        font.setPixelSize(max(7, round(size * 0.5)))
+        font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 92)
+        p.setFont(font)
+        p.setPen(QColor("white"))
+        p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "AH")
+        p.end()
+        icon.addPixmap(pm)
+    return icon
 
 
 def panel_on_top() -> bool:
@@ -98,7 +129,17 @@ class Tray:
     def update(self):
         s = self.backend.state or {}
         profile = s.get("profile")
-        self.icon.setIcon(QIcon.fromTheme(PROFILE_ICONS.get(profile, "speedometer-symbolic")))
+        g = s.get("gpu") or {}
+        if g.get("auto_eco"):
+            mode = "auto"
+        elif g.get("switching"):
+            mode = g.get("target") or "standard"
+        else:
+            mode = "eco" if g.get("state") == "off" else "standard"
+        key = (mode, bool(g.get("switching")))
+        if key != getattr(self, "_icon_key", None):
+            self._icon_key = key
+            self.icon.setIcon(make_icon(GPU_COLORS[mode], dim=key[1]))
         for p, a in self.mode_actions.items():
             a.setChecked(p == profile)
         g = s.get("gpu") or {}
@@ -133,7 +174,7 @@ def main() -> int:
     app.setApplicationDisplayName("Asus-helper")
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("asus-helper")
-    app.setWindowIcon(QIcon.fromTheme("speedometer"))
+    app.setWindowIcon(QIcon.fromTheme("asus-helper", make_icon(GPU_COLORS["standard"])))
     app.setQuitOnLastWindowClosed(False)
 
     system = Gio.bus_get_sync(Gio.BusType.SYSTEM)

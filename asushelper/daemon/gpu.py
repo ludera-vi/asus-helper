@@ -136,39 +136,47 @@ def holders(gpu: str | None = None) -> list[tuple[int, str]]:
 
 
 # ---------- ложная клавиша «переключить дисплей» ----------
-# Когда видеокарта выключается или включается, BIOS шлёт через asus-wmi клавишу KEY_SWITCHVIDEOMODE
-# (как Meta+P) — KDE в ответ открывает выбор экрана. На время переключения забираем устройство
-# «Asus WMI hotkeys» себе (EVIOCGRAB): эта клавиша до рабочего стола не дойдёт.
+# Когда видеокарта выключается или включается, BIOS сообщает ACPI-видео о смене вывода, и устройство
+# «Video Bus» шлёт клавишу KEY_SWITCHVIDEOMODE (как Meta+P) — KDE в ответ открывает выбор экрана.
+# На время переключения забираем такие устройства себе (EVIOCGRAB): клавиша до рабочего стола не дойдёт.
 EVIOCGRAB = 0x40044590
-HOTKEYS_NAME = "Asus WMI hotkeys"
+SWALLOW_DEVICES = ("Video Bus", "Asus WMI hotkeys")
 
 
-def _grab_hotkeys():
-    """Открытый и захваченный дескриптор устройства горячих клавиш ASUS или None."""
-    for e in sysfs.find("/sys/class/input/event*"):
-        if sysfs.read(e + "/device/name") == HOTKEYS_NAME:
+class HotkeyGuard:
+    """Захват устройств, которые шлют ложную клавишу дисплея; отпускает с задержкой."""
+
+    def __init__(self):
+        self.fds: dict[str, int] = {}     # event-узел → дескриптор
+        self.grab_new()
+
+    def grab_new(self) -> None:
+        for e in sysfs.find("/sys/class/input/event*"):
+            node = os.path.basename(e)
+            if node in self.fds or sysfs.read(e + "/device/name") not in SWALLOW_DEVICES:
+                continue
             try:
-                fd = os.open("/dev/input/" + os.path.basename(e), os.O_RDONLY | os.O_NONBLOCK)
+                fd = os.open("/dev/input/" + node, os.O_RDONLY | os.O_NONBLOCK)
                 fcntl.ioctl(fd, EVIOCGRAB, 1)
-                return fd
+                self.fds[node] = fd
             except OSError as err:
-                log.info("не захватить %s: %s", HOTKEYS_NAME, err)
-                return None
-    return None
+                log.info("не захватить %s: %s", node, err)
 
-
-def _release_hotkeys(fd, delay: float = 2.0) -> None:
-    """Отпустить через delay секунд: событие от BIOS приходит с задержкой после записи флага."""
-    if fd is None:
-        return
-    def release():
-        time.sleep(delay)
-        try:
-            os.read(fd, 4096 * 24)      # выбросить накопленное
-        except OSError:
-            pass
-        os.close(fd)                    # закрытие снимает захват
-    threading.Thread(target=release, daemon=True).start()
+    def release_later(self, delay: float = 2.0) -> None:
+        """Событие от BIOS приходит с задержкой, а при включении NVIDIA появляется новый «Video Bus» —
+        его тоже держим, потом отпускаем всё."""
+        def run():
+            time.sleep(delay)
+            self.grab_new()
+            time.sleep(delay)
+            for fd in self.fds.values():
+                try:
+                    os.read(fd, 4096 * 24)      # выбросить накопленное
+                except OSError:
+                    pass
+                os.close(fd)                    # закрытие снимает захват
+            self.fds.clear()
+        threading.Thread(target=run, daemon=True).start()
 
 
 def _run(*cmd) -> bool:
@@ -181,6 +189,8 @@ def _run(*cmd) -> bool:
 def _start_services() -> None:
     for s in SERVICES:
         if subprocess.run(["systemctl", "is-enabled", "-q", s]).returncode == 0:
+            # после частых переключений systemd считает, что сервис «падает», и не даёт запустить
+            subprocess.run(["systemctl", "reset-failed", s], capture_output=True)
             _run("systemctl", "start", s)
 
 
@@ -327,11 +337,12 @@ class Switcher:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
                     raise GpuError("видеокарту уже переключает другая программа (gpu-eco?)")
-                grab = None if sysfs.ROOT else _grab_hotkeys()
+                guard = None if sysfs.ROOT else HotkeyGuard()
                 try:
                     (turn_off(force, ignore_displays) if want_off else turn_on())
                 finally:
-                    _release_hotkeys(grab)
+                    if guard:
+                        guard.release_later()
         except GpuError as e:
             err = str(e)
             can_force = e.can_force
