@@ -1,19 +1,19 @@
 #!/bin/bash
-# Пробный запуск asusherod из исходников вместо asusd.
+# Пробный запуск asusluderad из исходников вместо asusd.
 #
 #   sudo ./dev-run.sh            снимок snapper → asusd на паузу → демон в этом терминале
 #   Ctrl+C                       остановить демон и вернуть asusd как было
 #
 # Ничего не удаляется. asusd маскируется только до перезагрузки (systemctl mask --runtime),
 # чтобы udev не запустил его снова. Ставятся два файла прав (D-Bus и polkit) — их убирает
-# ./dev-run.sh --cleanup. Настройки демона: /etc/asushero/config.json.
+# ./dev-run.sh --cleanup. Настройки демона: /etc/asusludera/config.json.
 
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 [ $EUID -eq 0 ] || exec sudo "$0" "$@"
 
-DBUS_CONF=/etc/dbus-1/system.d/org.asushero.Daemon.conf
-POLKIT=/usr/share/polkit-1/actions/org.asushero.policy
+DBUS_CONF=/etc/dbus-1/system.d/org.asusludera.Daemon.conf
+POLKIT=/usr/share/polkit-1/actions/org.asusludera.policy
 
 reload_dbus() {
     busctl call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ReloadConfig >/dev/null
@@ -22,7 +22,7 @@ reload_dbus() {
 if [ "${1:-}" = --cleanup ]; then
     rm -fv "$DBUS_CONF" "$POLKIT"
     reload_dbus
-    echo "Файлы прав убраны. Настройки остались в /etc/asushero (удалить вручную, если не нужны)."
+    echo "Файлы прав убраны. Настройки остались в /etc/asusludera (удалить вручную, если не нужны)."
     exit 0
 fi
 
@@ -31,20 +31,39 @@ if command -v snapper >/dev/null && [ "${1:-}" != --no-snapshot ]; then
     read -rp "Сделать снимок snapper перед пробой? [Д/н] " a
     if [[ ! "$a" =~ ^[НнNn] ]]; then
         n=$(snapper -c root create --print-number --cleanup-algorithm number \
-                --description "перед пробным запуском asushero")
+                --description "перед пробным запуском asusludera")
         echo "Снимок #$n создан. Откат: загрузиться в него из меню загрузчика или snapper rollback $n"
     fi
 fi
 
 # ---------- 2. права D-Bus и polkit ----------
-install -Dm644 data/org.asushero.Daemon.conf "$DBUS_CONF"
-install -Dm644 data/org.asushero.policy "$POLKIT"
+# проект раньше назывался asushero — переносим его настройки и убираем его файлы прав
+if [ -e /etc/asushero/config.json ] && [ ! -e /etc/asusludera/config.json ]; then
+    install -Dm644 /etc/asushero/config.json /etc/asusludera/config.json
+    rm -r /etc/asushero
+    echo "Настройки перенесены из /etc/asushero в /etc/asusludera"
+fi
+rm -f /etc/dbus-1/system.d/org.asushero.Daemon.conf /usr/share/polkit-1/actions/org.asushero.policy
+install -Dm644 data/org.asusludera.Daemon.conf "$DBUS_CONF"
+install -Dm644 data/org.asusludera.policy "$POLKIT"
 reload_dbus
 
 # ---------- 3. настройки: при первом запуске переносим из asusd ----------
-if [ ! -e /etc/asushero/config.json ]; then
+if [ ! -e /etc/asusludera/config.json ]; then
     echo "Переношу настройки из /etc/asusd:"
-    python3 -m asushero.cli import-asusd
+    python3 -m asusludera.cli import-asusd
+elif ! grep -q '"keyboard"' /etc/asusludera/config.json; then
+    # настройки от прошлой версии — без подсветки: дозабираем её из asusd, остальное не трогаем
+    python3 - <<'EOF'
+import glob
+from asusludera.asusd_import import parse_aura
+from asusludera.daemon.config import Config
+cfg = Config().load()
+for path in sorted(glob.glob("/etc/asusd/aura_*.ron"))[:1]:
+    cfg.data["keyboard"].update(parse_aura(open(path).read()))
+    print("Подсветка перенесена из", path, cfg.data["keyboard"])
+cfg.save()
+EOF
 fi
 
 # ---------- 4. asusd на паузу ----------
@@ -60,5 +79,5 @@ systemctl mask --runtime asusd.service >/dev/null
 systemctl stop asusd.service asus-shutdown.service
 
 # ---------- 5. демон ----------
-echo "asusherod запущен. Проверка в другом терминале: python3 -m asushero.cli   (Ctrl+C — стоп)"
-python3 -m asushero.daemon --debug || true
+echo "asusluderad запущен. Проверка в другом терминале: python3 -m asusludera.cli   (Ctrl+C — стоп)"
+python3 -m asusludera.daemon --debug || true

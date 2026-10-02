@@ -1,8 +1,8 @@
-"""D-Bus API демона: org.asushero.Daemon на системной шине.
+"""D-Bus API демона: org.asusludera.Daemon на системной шине.
 
 Сложные данные (состояние, настройки) передаются строкой JSON: так их одинаково легко читать
 из QML, Python и busctl. Методы, которые что-то меняют, проверяют право через polkit
-(действие org.asushero.manage: активному пользователю — без пароля).
+(действие org.asusludera.manage: активному пользователю — без пароля).
 """
 import json
 import logging
@@ -10,16 +10,18 @@ import logging
 from gi.repository import Gio, GLib
 
 from .. import BUS_NAME, FANS, INTERFACE, OBJECT_PATH, PROFILES, __version__
+from . import aura
+from . import gpu
 from . import hardware as hw
 from .config import Config
 from .modes import Modes
 
 log = logging.getLogger(__name__)
 
-POLKIT_ACTION = "org.asushero.manage"
+POLKIT_ACTION = "org.asusludera.manage"
 # False только при разработке на сессионной шине (там нет polkit)
 USE_POLKIT = True
-ERROR = "org.asushero.Error"
+ERROR = "org.asusludera.Error"
 
 XML = f"""
 <node>
@@ -46,7 +48,24 @@ XML = f"""
       <arg type="i" direction="in" name="value"/>
     </method>
     <method name="ResetPowerLimits"><arg type="s" direction="in" name="profile"/></method>
+    <method name="SetGpuMode">
+      <arg type="s" direction="in" name="mode"/><arg type="b" direction="in" name="force"/>
+    </method>
+    <method name="SetGpuAutoEco"><arg type="b" direction="in" name="enabled"/></method>
+    <method name="SetKeyboardBrightness"><arg type="u" direction="in" name="level"/></method>
+    <method name="SetAura">
+      <arg type="s" direction="in" name="mode"/><arg type="s" direction="in" name="color"/>
+      <arg type="s" direction="in" name="color2"/><arg type="s" direction="in" name="speed"/>
+    </method>
+    <method name="SetAuraPower">
+      <arg type="b" direction="in" name="awake"/><arg type="b" direction="in" name="boot"/>
+      <arg type="b" direction="in" name="sleep"/><arg type="b" direction="in" name="shutdown"/>
+    </method>
     <signal name="StateChanged"><arg type="s" name="json"/></signal>
+    <!-- яркость сменили клавишами — для карточки KDE -->
+    <signal name="KeyboardBrightnessChanged"><arg type="i" name="level"/><arg type="i" name="max"/></signal>
+    <!-- переключение видеокарты закончилось; error пустой — успешно -->
+    <signal name="GpuSwitchFinished"><arg type="s" name="state"/><arg type="s" name="error"/></signal>
     <property name="Profile" type="s" access="read"/>
     <property name="Version" type="s" access="read"/>
   </interface>
@@ -58,7 +77,7 @@ READ_ONLY = {"GetState", "GetConfig"}
 
 
 class Failed(Exception):
-    """Ошибка для клиента: текст уходит ему как org.asushero.Error.Failed."""
+    """Ошибка для клиента: текст уходит ему как org.asusludera.Error.Failed."""
 
 
 class Service:
@@ -67,7 +86,9 @@ class Service:
         self.config = config
         self.listeners = []   # другие интерфейсы (эмуляция PPD) — тоже хотят знать о смене режима
         self.modes = Modes(config, self._changed)
+        self.gpu = gpu.Switcher(self._gpu_done)
         self._last_profile = None
+        self._save_brightness = 0
         node = Gio.DBusNodeInfo.new_for_xml(XML)
         bus.register_object(OBJECT_PATH, node.interfaces[0], self._on_call, self._on_get_property, None)
 
@@ -88,7 +109,99 @@ class Service:
             "cpu_temp": hw.cpu_temp(),
             "battery": hw.battery(),
             "power_limits": hw.power_limits(),
+            "gpu": {
+                "supported": gpu.supported(),
+                "state": gpu.state() if gpu.supported() else None,
+                "mux_hybrid": gpu.mux_hybrid(),
+                "auto_eco": self.config.data["gpu"]["auto_eco"],
+                "switching": self.gpu.busy,
+                "error": self.gpu.last_error,
+            },
+            "keyboard": {**self.config.data["keyboard"], **({"brightness": b["value"], "max": b["max"]}
+                                                            if (b := aura.brightness()) else {})},
         }
+
+    def full_state(self) -> dict:
+        """state() и то, что дорого считать для каждого сигнала (кто держит NVIDIA)."""
+        s = self.state()
+        if s["gpu"]["state"] not in (None, "off"):
+            s["gpu"]["holders"] = sorted({c for _, c in gpu.holders()})
+        return s
+
+    # ---------- события ----------
+    def startup(self) -> None:
+        if gpu.supported():
+            gpu.fixup()
+        self.apply_keyboard()
+        self.modes.startup()
+        self._auto_eco()
+        self._watch_brightness()
+
+    def resumed(self) -> None:
+        self.modes.ac = hw.on_ac()
+        self.apply_keyboard()
+        self.modes.reapply("выход из сна")
+        self._auto_eco()
+
+    def power_source_changed(self, ac: bool) -> None:
+        if ac == self.modes.ac:
+            return
+        self.modes.power_source_changed(ac)
+        self._auto_eco()
+
+    def apply_keyboard(self) -> None:
+        k = self.config.data["keyboard"]
+        aura.set_brightness(k["brightness"])
+        aura.apply(k)
+
+    def _auto_eco(self) -> None:
+        if not (self.config.data["gpu"]["auto_eco"] and gpu.supported()):
+            return
+        want_off = not self.modes.ac
+        if gpu.bios_off() != want_off and not self.gpu.busy:
+            log.info("«Оптимальный»: %s", "батарея → Eco" if want_off else "сеть → NVIDIA включается")
+            self.gpu.start(want_off)
+            self._changed()
+
+    def _gpu_done(self, error) -> None:
+        self.modes._nvidia_powerd(self.modes.ac)   # после включения карты сервис мог запуститься на батарее
+        self.bus.emit_signal(None, OBJECT_PATH, INTERFACE, "GpuSwitchFinished",
+                             GLib.Variant("(ss)", (gpu.state(), error or "")))
+        self._changed()
+
+    def _watch_brightness(self) -> None:
+        import os
+        path = aura.brightness_hw_changed_path()
+        if path is None:
+            return
+        fd = os.open(sysfs_path(path), os.O_RDONLY)
+        try:
+            os.read(fd, 16)   # без первого чтения poll сработает сразу; ENODATA до первого нажатия — норма
+        except OSError:
+            pass
+
+        def changed(fd, _cond):
+            os.lseek(fd, 0, os.SEEK_SET)
+            try:
+                level = int(os.read(fd, 16))
+            except (OSError, ValueError):
+                return True
+            b = aura.brightness() or {"max": 3}
+            self.bus.emit_signal(None, OBJECT_PATH, INTERFACE, "KeyboardBrightnessChanged",
+                                 GLib.Variant("(ii)", (level, b["max"])))
+            self.config.data["keyboard"]["brightness"] = level
+            # клавишу жмут несколько раз — сохраняем, когда закончили
+            if self._save_brightness:
+                GLib.source_remove(self._save_brightness)
+            self._save_brightness = GLib.timeout_add_seconds(3, self._save_config_later)
+            return True
+        GLib.io_add_watch(fd, GLib.PRIORITY_DEFAULT, GLib.IOCondition.PRI | GLib.IOCondition.ERR, changed)
+
+    def _save_config_later(self):
+        self._save_brightness = 0
+        self.config.save()
+        self._changed()
+        return GLib.SOURCE_REMOVE
 
     def _changed(self) -> None:
         """Режим или настройки изменились — оповестить подписчиков."""
@@ -132,7 +245,7 @@ class Service:
 
     # ---------- методы ----------
     def do_GetState(self):
-        return json.dumps(self.state())
+        return json.dumps(self.full_state())
 
     def do_GetConfig(self):
         return json.dumps(self.config.data)
@@ -210,12 +323,71 @@ class Service:
             self.modes.set_profile(profile, remember=False)
         self._changed()
 
+    def do_SetGpuMode(self, mode, force):
+        if not gpu.supported():
+            raise Failed("на этом ноутбуке нельзя выключать видеокарту через BIOS")
+        if mode not in ("eco", "standard"):
+            raise Failed("режим видеокарты: eco или standard")
+        if self.gpu.busy:
+            raise Failed("видеокарта уже переключается")
+        if mode == "eco" and not gpu.mux_hybrid():
+            raise Failed("MUX в режиме «только NVIDIA» — выключать её нельзя")
+        if self.config.data["gpu"]["auto_eco"]:
+            # ручной выбор отменяет «Оптимальный», иначе при смене питания карта переключится сама
+            self.config.data["gpu"]["auto_eco"] = False
+            self.config.save()
+        self.gpu.start(mode == "eco", force)
+        self._changed()
+
+    def do_SetGpuAutoEco(self, enabled):
+        self.config.data["gpu"]["auto_eco"] = bool(enabled)
+        self.config.save()
+        self._auto_eco()
+        self._changed()
+
+    def do_SetKeyboardBrightness(self, level):
+        if not aura.set_brightness(level):
+            raise Failed("подсветка клавиатуры не найдена")
+        self.config.data["keyboard"]["brightness"] = (aura.brightness() or {}).get("value", level)
+        self.config.save()
+        self._changed()
+
+    def do_SetAura(self, mode, color, color2, speed):
+        if mode not in aura.MODES:
+            raise Failed(f"эффект: {', '.join(aura.MODES)}")
+        if speed not in aura.SPEEDS:
+            raise Failed(f"скорость: {', '.join(aura.SPEEDS)}")
+        try:
+            aura.parse_color(color)
+            aura.parse_color(color2 or "#000000")
+        except ValueError as e:
+            raise Failed(str(e))
+        k = self.config.data["keyboard"]
+        k.update(mode=mode, color=color.upper(), color2=(color2 or "#000000").upper(), speed=speed)
+        if not aura.apply(k):
+            raise Failed("клавиатура Aura не ответила (журнал демона)")
+        self.config.save()
+        self._changed()
+
+    def do_SetAuraPower(self, awake, boot, sleep, shutdown):
+        k = self.config.data["keyboard"]
+        k.update(awake=awake, boot=boot, sleep=sleep, shutdown=shutdown)
+        if not aura.apply(k):
+            raise Failed("клавиатура Aura не ответила (журнал демона)")
+        self.config.save()
+        self._changed()
+
     def _save_and_reapply(self, profile):
         self.config.save()
         if profile == self.modes.current:
             self.modes.reapply(f"изменены настройки режима {profile}")
         else:
             self._changed()
+
+
+def sysfs_path(p: str) -> str:
+    from . import sysfs
+    return sysfs.path(p)
 
 
 def check_profile(p):

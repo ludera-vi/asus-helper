@@ -1,9 +1,10 @@
-"""asusherod — системный демон asushero. Запуск: python -m asushero.daemon [--session-bus]
+"""asusluderad — системный демон asusludera. Запуск: python -m asusludera.daemon [--session-bus]
 
 --session-bus — для разработки: работать на сессионной шине без root, вместе с
-ASUSHERO_SYSROOT (поддельный sysfs) и ASUSHERO_CONFIG_DIR.
+ASUSLUDERA_SYSROOT (поддельный sysfs) и ASUSLUDERA_CONFIG_DIR.
 """
 import argparse
+import os
 import logging
 import signal
 import sys
@@ -20,13 +21,14 @@ except (ValueError, ImportError):   # старый GLib
     signal_add = GLib.unix_signal_add
 
 from .. import BUS_NAME, __version__
+from . import gpu
 from . import hardware as hw
 from .config import Config
 from .ppd import PowerProfiles
 from . import service as service_mod
 from .service import Service
 
-log = logging.getLogger("asusherod")
+log = logging.getLogger("asusluderad")
 
 ASUSD = "xyz.ljones.Asusd"
 
@@ -41,7 +43,7 @@ def name_has_owner(bus, name) -> bool:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(prog="asusherod")
+    ap = argparse.ArgumentParser(prog="asusluderad")
     ap.add_argument("--session-bus", action="store_true", help="сессионная шина (разработка)")
     ap.add_argument("--no-ppd", action="store_true", help="не выдавать себя за power-profiles-daemon")
     ap.add_argument("--debug", action="store_true")
@@ -50,7 +52,7 @@ def main() -> int:
     # systemd добавляет время сам — в журнал только уровень и текст
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s", stream=sys.stdout)
-    log.info("asusherod %s", __version__)
+    log.info("asusluderad %s", __version__)
 
     bus = Gio.bus_get_sync(Gio.BusType.SESSION if args.session_bus else Gio.BusType.SYSTEM)
     if not args.session_bus and name_has_owner(bus, ASUSD):
@@ -64,23 +66,45 @@ def main() -> int:
     ppd = None if args.no_ppd else PowerProfiles(bus, service)
 
     hw.set_charge_limit(config.data["charge_limit"])
-    service.modes.startup()
+    service.startup()
 
     # ---------- сеть ↔ батарея (UPower сообщает об изменении) ----------
     def on_upower(*_):
-        service.modes.power_source_changed(hw.on_ac())
+        service.power_source_changed(hw.on_ac())
     bus.signal_subscribe("org.freedesktop.UPower", "org.freedesktop.DBus.Properties", "PropertiesChanged",
                          "/org/freedesktop/UPower", None, Gio.DBusSignalFlags.NONE, on_upower)
     # подстраховка, если UPower не прислал сигнал
     GLib.timeout_add_seconds(10, lambda: on_upower() or True)
 
     # ---------- выход из сна: BIOS забывает кривые и лимит заряда ----------
+    # Блокировка сна «с задержкой»: logind ждёт, пока мы её отпустим (не дольше InhibitDelayMaxSec).
+    # Перед сном убираем с шины выключенную NVIDIA — иначе выход из сна ждёт её 65 с.
+    inhibitor = []
+
+    def take_inhibitor():
+        if args.session_bus or inhibitor:
+            return
+        try:
+            r, fds = bus.call_with_unix_fd_list_sync(
+                "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "Inhibit",
+                GLib.Variant("(ssss)", ("sleep", "AsusLudera", "подготовка видеокарты ко сну", "delay")),
+                GLib.VariantType("(h)"), Gio.DBusCallFlags.NONE, -1, None, None)
+            inhibitor.append(fds.get(r.unpack()[0]))
+        except GLib.Error as e:
+            log.warning("logind не дал блокировку сна: %s", e.message)
+
     def on_sleep(_c, _s, _p, _i, _sig, params):
         going_to_sleep = params.unpack()[0]
-        if not going_to_sleep:
+        if going_to_sleep:
+            if gpu.supported() and not service.gpu.busy:
+                gpu.fixup()
+            while inhibitor:
+                os.close(inhibitor.pop())
+        else:
             hw.set_charge_limit(config.data["charge_limit"])
-            service.modes.ac = hw.on_ac()
-            service.modes.reapply("выход из сна")
+            service.resumed()
+            take_inhibitor()
+    take_inhibitor()
     bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "PrepareForSleep",
                          "/org/freedesktop/login1", None, Gio.DBusSignalFlags.NONE, on_sleep)
 
@@ -92,7 +116,7 @@ def main() -> int:
             ppd.own_names()
 
     def on_name_lost(_c, name):
-        log.error("не удалось занять имя %s на шине (уже запущен другой asusherod?)", name)
+        log.error("не удалось занять имя %s на шине (уже запущен другой asusluderad?)", name)
         loop.quit()
 
     Gio.bus_own_name_on_connection(bus, BUS_NAME, Gio.BusNameOwnerFlags.NONE, on_name_acquired, on_name_lost)
@@ -101,6 +125,7 @@ def main() -> int:
         config.load()
         log.info("настройки перечитаны")
         hw.set_charge_limit(config.data["charge_limit"])
+        service.apply_keyboard()
         service.modes.reapply("перечитаны настройки")
         return GLib.SOURCE_CONTINUE
 

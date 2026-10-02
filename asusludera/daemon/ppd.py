@@ -82,8 +82,8 @@ class PowerProfiles:
         return TO_PPD.get(self.service.modes.current or "", "balanced")
 
     def _props(self) -> dict:
-        profiles = [{"Profile": GLib.Variant("s", TO_PPD[p]), "Driver": GLib.Variant("s", "asushero"),
-                     "PlatformDriver": GLib.Variant("s", "asushero"), "CpuDriver": GLib.Variant("s", "intel_pstate")}
+        profiles = [{"Profile": GLib.Variant("s", TO_PPD[p]), "Driver": GLib.Variant("s", "asusludera"),
+                     "PlatformDriver": GLib.Variant("s", "asusludera"), "CpuDriver": GLib.Variant("s", "intel_pstate")}
                     for p in ("quiet", "balanced", "performance")]
         holds = [{"Profile": GLib.Variant("s", h["profile"]), "Reason": GLib.Variant("s", h["reason"]),
                   "ApplicationId": GLib.Variant("s", h["app"])} for h in self.holds.values()]
@@ -104,7 +104,7 @@ class PowerProfiles:
 
     def _on_set(self, _conn, sender, _path, _iface, name, value):
         if name != "ActiveProfile":
-            return True   # BatteryAware и т. п. — игнорируем, автоматикой управляет asushero
+            return True   # BatteryAware и т. п. — игнорируем, автоматикой управляет asusludera
         profile = FROM_PPD.get(value.unpack())
         if profile is None:
             return False

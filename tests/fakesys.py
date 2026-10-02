@@ -27,6 +27,7 @@ def build(root: str, ac: bool = False) -> None:
         _w(root, f"{a}/{name}/max_value", hi)
         _w(root, f"{a}/{name}/default_value", df)
     _w(root, f"{a}/dgpu_disable/current_value", 1)
+    _w(root, f"{a}/gpu_mux_mode/current_value", 1)
     _w(root, f"{a}/panel_overdrive/current_value", 1)
 
     _w(root, "/sys/class/hwmon/hwmon6/name", "asus")
@@ -50,6 +51,17 @@ def build(root: str, ac: bool = False) -> None:
                  "voltage_now": 16000000, "charge_full": 4641000, "charge_full_design": 5650000,
                  "charge_control_end_threshold": 100}.items():
         _w(root, f"{b}/{k}", v)
+
+
+    led = "/sys/class/leds/asus::kbd_backlight"
+    _w(root, led + "/brightness", 2)
+    _w(root, led + "/max_brightness", 3)
+    _w(root, "/sys/class/hidraw/hidraw0/device/uevent", "HID_ID=0003:00000B05:000019B6\nHID_NAME=ITE")
+    _w(root, "/sys/class/hidraw/hidraw1/device/uevent", "HID_ID=0003:00000B05:0000193B")
+    _w(root, "/dev/hidraw0", "")
+    os.makedirs(root + "/sys/bus/pci/devices/0000:00:02.0", exist_ok=True)
+    _w(root, "/sys/bus/pci/devices/0000:00:02.0/vendor", "0x8086")
+    _w(root, "/sys/bus/pci/devices/0000:00:02.0/class", "0x030000")
 
 
 def read(root: str, p: str) -> str:

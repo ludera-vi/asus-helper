@@ -1,8 +1,9 @@
-"""Перенос настроек из asusd (/etc/asusd/*.ron) в config.json asushero.
+"""Перенос настроек из asusd (/etc/asusd/*.ron) в config.json asusludera.
 
 Берёт кривые вентиляторов по режимам, режим на сети и батарее, связку режим → EPP и лимит заряда.
 Формат RON разбирается регулярными выражениями: нужны только эти поля.
 """
+import glob
 import re
 
 from . import PROFILES
@@ -56,6 +57,35 @@ def parse_asusd(text: str) -> dict:
     return out
 
 
+AURA_MODES = {"Static": "static", "Breathe": "breathe", "RainbowCycle": "cycle", "Pulse": "strobe"}
+AURA_SPEEDS = {"Low": "slow", "Med": "normal", "High": "fast"}
+AURA_BRIGHTNESS = {"Off": 0, "Low": 1, "Med": 2, "High": 3}
+
+
+def parse_aura(text: str) -> dict:
+    """aura_*.ron: текущий эффект, его цвета и скорость, яркость, состояния питания клавиатуры."""
+    out = {}
+    if (v := _field(text, "brightness")) in AURA_BRIGHTNESS:
+        out["brightness"] = AURA_BRIGHTNESS[v]
+    mode = _field(text, "current_mode")
+    if mode in AURA_MODES:
+        out["mode"] = AURA_MODES[mode]
+        m = re.search(rf"\b{mode}\s*:\s*\((.*?)\n        \),", text, re.S)
+        if m:
+            block = m.group(1)
+            colours = re.findall(r"colour\d:\s*\(\s*r:\s*(\d+),\s*g:\s*(\d+),\s*b:\s*(\d+)", block)
+            if colours:
+                out["color"] = "#%02X%02X%02X" % tuple(map(int, colours[0]))
+            if len(colours) > 1:
+                out["color2"] = "#%02X%02X%02X" % tuple(map(int, colours[1]))
+            if (v := _field(block, "speed")) in AURA_SPEEDS:
+                out["speed"] = AURA_SPEEDS[v]
+    m = re.search(r"zone:\s*Keyboard,\s*boot:\s*(\w+),\s*awake:\s*(\w+),\s*sleep:\s*(\w+),\s*shutdown:\s*(\w+)", text)
+    if m:
+        out.update(zip(("boot", "awake", "sleep", "shutdown"), (x == "true" for x in m.groups())))
+    return out
+
+
 def import_into(config, asusd_dir: str = "/etc/asusd") -> list[str]:
     """Переносит настройки в объект Config; возвращает список того, что перенесено."""
     done = []
@@ -80,4 +110,9 @@ def import_into(config, asusd_dir: str = "/etc/asusd") -> list[str]:
                 done.append(f"{profile}: кривая {fan.upper()}" + ("" if c["enabled"] else " (выключена — BIOS)"))
     except FileNotFoundError:
         pass
+    for path in sorted(glob.glob(f"{asusd_dir}/aura_*.ron"))[:1]:
+        with open(path) as f:
+            a = parse_aura(f.read())
+        config.data["keyboard"].update(a)
+        done.append("подсветка: " + ", ".join(f"{k} = {v}" for k, v in a.items()))
     return done

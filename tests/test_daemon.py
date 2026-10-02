@@ -4,20 +4,20 @@ import os
 import tempfile
 import unittest
 
-ROOT = tempfile.mkdtemp(prefix="asushero-sys-")
-CONF = tempfile.mkdtemp(prefix="asushero-conf-")
-os.environ["ASUSHERO_SYSROOT"] = ROOT
-os.environ["ASUSHERO_CONFIG_DIR"] = CONF
+ROOT = tempfile.mkdtemp(prefix="asusludera-sys-")
+CONF = tempfile.mkdtemp(prefix="asusludera-conf-")
+os.environ["ASUSLUDERA_SYSROOT"] = ROOT
+os.environ["ASUSLUDERA_CONFIG_DIR"] = CONF
 
 import gi  # noqa: E402
 gi.require_version("Gio", "2.0")
 from gi.repository import GLib  # noqa: E402
 
-from asushero import asusd_import  # noqa: E402
-from asushero.daemon import hardware as hw  # noqa: E402
-from asushero.daemon import sysfs  # noqa: E402
-from asushero.daemon.config import Config  # noqa: E402
-from asushero.daemon.modes import Modes  # noqa: E402
+from asusludera import asusd_import  # noqa: E402
+from asusludera.daemon import hardware as hw  # noqa: E402
+from asusludera.daemon import sysfs  # noqa: E402
+from asusludera.daemon.config import Config  # noqa: E402
+from asusludera.daemon.modes import Modes  # noqa: E402
 from tests import fakesys  # noqa: E402
 
 CURVE = "/sys/class/hwmon/hwmon7"
@@ -219,3 +219,59 @@ class ModesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuraTest(unittest.TestCase):
+    def setUp(self):
+        fakesys.build(ROOT)
+
+    def test_effect_bytes_like_ghelper(self):
+        from asusludera.daemon import aura
+        m = aura.effect_message("static", "#80A68E", "#000000", "normal")
+        self.assertEqual(m.hex(), "5db3000080a68eeb0000000000")
+        m = aura.effect_message("breathe", "#FF0000", "#0000FF", "slow")
+        self.assertEqual(m.hex(), "5db30001ff0000e1000100" + "00ff")
+        # чёрный — случайные цвета
+        self.assertEqual(aura.effect_message("static", "#000000")[9], 0xFF)
+
+    def test_power_bits(self):
+        from asusludera.daemon import aura
+        self.assertEqual(aura.power_message(True, True, True, True).hex(), "5dbd01ff000000ff")
+        self.assertEqual(aura.power_message(True, False, False, False)[3], 0b1100)
+
+    def test_apply_writes_feature_reports(self):
+        from asusludera.daemon import aura
+        self.assertEqual(aura.find_device(), "/dev/hidraw0")
+        cfg = {"mode": "static", "color": "#80A68E", "color2": "#000000", "speed": "normal",
+               "awake": True, "boot": True, "sleep": True, "shutdown": True}
+        self.assertTrue(aura.apply(cfg))
+        data = open(ROOT + "/dev/hidraw0", "rb").read()
+        reports = [data[i:i + aura.FEATURE_LEN] for i in range(0, len(data), aura.FEATURE_LEN)]
+        self.assertEqual([r[1] for r in reports], [0xB9, ord("A"), 0xB3, 0xB5, 0xB4, 0xBD])
+        self.assertTrue(all(len(r) == 63 and r[0] == 0x5D for r in reports))
+
+    def test_brightness(self):
+        from asusludera.daemon import aura
+        self.assertEqual(aura.brightness(), {"value": 2, "max": 3})
+        self.assertTrue(aura.set_brightness(9))
+        self.assertEqual(aura.brightness()["value"], 3)
+
+    def test_parse_real_aura_if_present(self):
+        if not os.path.exists("/etc/asusd/aura_19b6.ron"):
+            self.skipTest("нет /etc/asusd")
+        a = asusd_import.parse_aura(open("/etc/asusd/aura_19b6.ron").read())
+        self.assertIn(a["mode"], ("static", "breathe", "cycle", "strobe"))
+        self.assertRegex(a["color"], r"^#[0-9A-F]{6}$")
+
+
+class GpuTest(unittest.TestCase):
+    def setUp(self):
+        fakesys.build(ROOT)
+
+    def test_state_off_and_no_nvidia(self):
+        from asusludera.daemon import gpu
+        self.assertTrue(gpu.supported())
+        self.assertTrue(gpu.mux_hybrid())
+        self.assertEqual(gpu.state(), "off")
+        self.assertIsNone(gpu.find_gpu())     # на шине только Intel
+        self.assertFalse(gpu.fixup())          # убирать нечего

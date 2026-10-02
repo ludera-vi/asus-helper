@@ -1,6 +1,6 @@
-"""Настройки демона: /etc/asushero/config.json.
+"""Настройки демона: /etc/asusludera/config.json.
 
-Файл можно править руками (потом: systemctl reload asusherod), но обычно его меняет демон
+Файл можно править руками (потом: systemctl reload asusluderad), но обычно его меняет демон
 по командам из приложения. Сохраняется атомарно, чтобы сбой питания не оставил пустой файл.
 """
 import copy
@@ -12,7 +12,7 @@ from .. import FANS, PROFILES
 
 log = logging.getLogger(__name__)
 
-CONFIG_DIR = os.environ.get("ASUSHERO_CONFIG_DIR", "/etc/asushero")
+CONFIG_DIR = os.environ.get("ASUSLUDERA_CONFIG_DIR", "/etc/asusludera")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 DEFAULT_EPP = {"quiet": "power", "balanced": "balance_power", "performance": "performance"}
@@ -39,6 +39,19 @@ DEFAULTS = {
     # Отключать nvidia-powerd на батарее (Dynamic Boost не нужен без сети)
     "stop_nvidia_powerd_on_battery": True,
     "profiles": {p: default_profile() for p in PROFILES},
+    "gpu": {
+        # «Оптимальный» как в G-Helper: на батарее NVIDIA выключается (Eco), от сети включается
+        "auto_eco": False,
+    },
+    "keyboard": {
+        "brightness": 2,          # 0–3; меняется и клавишами — демон запоминает
+        "mode": "static",         # static | breathe | cycle | strobe
+        "color": "#FFFFFF",
+        "color2": "#000000",      # второй цвет для breathe
+        "speed": "normal",        # slow | normal | fast
+        # когда светиться
+        "awake": True, "boot": True, "sleep": True, "shutdown": True,
+    },
 }
 
 

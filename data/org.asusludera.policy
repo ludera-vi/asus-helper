@@ -3,8 +3,8 @@
  "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
-  <vendor>asushero</vendor>
-  <action id="org.asushero.manage">
+  <vendor>asusludera</vendor>
+  <action id="org.asusludera.manage">
     <description>Manage ASUS laptop settings</description>
     <description xml:lang="ru">Управление настройками ноутбука ASUS</description>
     <message>Authentication is required to change laptop settings</message>

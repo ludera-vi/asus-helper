@@ -1,18 +1,24 @@
-"""asushero-cli — управление демоном из терминала.
+"""asusludera-cli — управление демоном из терминала.
 
-  asushero-cli                         состояние
-  asushero-cli profile [quiet|balanced|performance|next]
-  asushero-cli auto on|off             режим по источнику питания
-  asushero-cli charge 80               лимит заряда батареи, %
-  asushero-cli epp PROFILE VALUE|default
-  asushero-cli fan [PROFILE]           кривые вентиляторов
-  asushero-cli fan set PROFILE cpu|gpu 30:0,50:10,…   8 точек «°C:%»
-  asushero-cli fan reset PROFILE cpu|gpu              вернуть кривую BIOS
-  asushero-cli fan factory             заводские кривые текущего режима
-  asushero-cli power                   лимиты мощности
-  asushero-cli power set PROFILE ATTR VALUE|default
-  asushero-cli power reset PROFILE
-  asushero-cli import-asusd            перенести настройки из /etc/asusd (root, демон остановлен)
+  asusludera-cli                         состояние
+  asusludera-cli profile [quiet|balanced|performance|next]
+  asusludera-cli auto on|off             режим по источнику питания
+  asusludera-cli charge 80               лимит заряда батареи, %
+  asusludera-cli epp PROFILE VALUE|default
+  asusludera-cli fan [PROFILE]           кривые вентиляторов
+  asusludera-cli fan set PROFILE cpu|gpu 30:0,50:10,…   8 точек «°C:%»
+  asusludera-cli fan reset PROFILE cpu|gpu              вернуть кривую BIOS
+  asusludera-cli fan factory             заводские кривые текущего режима
+  asusludera-cli power                   лимиты мощности
+  asusludera-cli power set PROFILE ATTR VALUE|default
+  asusludera-cli power reset PROFILE
+  asusludera-cli gpu                    состояние видеокарты
+  asusludera-cli gpu eco|standard [--force]   выключить / включить NVIDIA (--force закроет программы на ней)
+  asusludera-cli gpu auto on|off        «Оптимальный»: Eco на батарее, NVIDIA от сети
+  asusludera-cli kbd [0-3]              яркость подсветки клавиатуры
+  asusludera-cli aura static|breathe|cycle|strobe [#RRGGBB] [#RRGGBB] [slow|normal|fast]
+  asusludera-cli aura power awake,boot,sleep,shutdown   когда светиться (перечислить нужное)
+  asusludera-cli import-asusd            перенести настройки из /etc/asusd (root, демон остановлен)
 """
 import json
 import re
@@ -51,7 +57,7 @@ class Client:
         except GLib.Error as e:
             msg = re.sub(r"^GDBus\.Error:[\w.]+:\s*", "", e.message)
             if "ServiceUnknown" in e.message or "was not provided" in e.message:
-                msg = "демон asusherod не запущен (systemctl status asusherod)"
+                msg = "демон asusluderad не запущен (systemctl status asusluderad)"
             raise Error(msg) from None
         v = r.unpack()
         return v[0] if v else None
@@ -82,6 +88,18 @@ def cmd_status(cl: Client, _args):
         print(f"Батарея    : {b['capacity']}%  {b['status']}  {b['power_w']} Вт  лимит {b['charge_limit']}%{wear}")
     fans = s["fans"]
     print(f"Вентиляторы: CPU {fans['cpu']} об/мин, GPU {fans['gpu']} об/мин   CPU {s['cpu_temp']} °C")
+    g = s.get("gpu") or {}
+    if g.get("supported"):
+        users = f"   используют: {', '.join(g['holders'])}" if g.get("holders") else ""
+        print(f"Видеокарта : {GPU_NAMES.get(g['state'], g['state'])}"
+              f"{'  (переключается…)' if g['switching'] else ''}"
+              f"   оптимальный: {'да' if g['auto_eco'] else 'нет'}{users}")
+        if g.get("error"):
+            print(f"             последняя ошибка: {g['error']}")
+    k = s.get("keyboard") or {}
+    if k:
+        print(f"Подсветка  : яркость {k.get('brightness')}/{k.get('max', 3)}   {k['mode']} {k['color']}"
+              f"{' ' + k['color2'] if k['mode'] == 'breathe' else ''} {k['speed']}")
     if s.get("fan_curves"):
         for f in FANS:
             c = s["fan_curves"][f]
@@ -99,19 +117,19 @@ def cmd_profile(cl, args):
 
 def cmd_auto(cl, args):
     if not args or args[0] not in ("on", "off"):
-        raise Error("asushero-cli auto on|off")
+        raise Error("asusludera-cli auto on|off")
     cl.call("SetAutoProfile", "b", args[0] == "on")
 
 
 def cmd_charge(cl, args):
     if not args or not args[0].isdigit():
-        raise Error("asushero-cli charge 20…100")
+        raise Error("asusludera-cli charge 20…100")
     cl.call("SetChargeLimit", "u", int(args[0]))
 
 
 def cmd_epp(cl, args):
     if len(args) != 2:
-        raise Error("asushero-cli epp PROFILE VALUE|default")
+        raise Error("asusludera-cli epp PROFILE VALUE|default")
     cl.call("SetEpp", "ss", args[0], "" if args[1] == "default" else args[1])
 
 
@@ -167,10 +185,66 @@ def cmd_import(_cl, _args):
     print("Перенесено в", cfg.path)
     for line in done:
         print("  " + line)
-    print("Если демон запущен: sudo systemctl reload asusherod")
+    print("Если демон запущен: sudo systemctl reload asusluderad")
 
 
-COMMANDS = {"status": cmd_status, "profile": cmd_profile, "auto": cmd_auto, "charge": cmd_charge,
+GPU_NAMES = {"off": "выключена (Eco)", "suspended": "включена, спит", "active": "включена, работает",
+             "missing": "включена, но драйвер не загружен"}
+
+
+def cmd_gpu(cl, args):
+    if not args:
+        g = cl.state()["gpu"]
+        print(GPU_NAMES.get(g["state"], g["state"]))
+        if g.get("holders"):
+            print("Используют: " + ", ".join(g["holders"]))
+    elif args[0] in ("eco", "standard"):
+        cl.call("SetGpuMode", "sb", args[0], "--force" in args)
+        print("Переключаю… (это занимает несколько секунд)")
+        # ждём окончания — демон сообщает сигналом, проще опросить состояние
+        import time
+        for _ in range(60):
+            time.sleep(0.5)
+            g = cl.state()["gpu"]
+            if not g["switching"]:
+                if g["error"]:
+                    raise Error(g["error"] + ("" if "--force" in args or "используют" not in g["error"]
+                                              else "\nЗакрыть их и выключить: asusludera-cli gpu eco --force"))
+                print(GPU_NAMES.get(g["state"], g["state"]))
+                return
+        raise Error("переключение не закончилось за 30 с — смотри журнал демона")
+    elif args[0] == "auto" and len(args) == 2 and args[1] in ("on", "off"):
+        cl.call("SetGpuAutoEco", "b", args[1] == "on")
+    else:
+        raise Error(__doc__)
+
+
+def cmd_kbd(cl, args):
+    if not args:
+        k = cl.state()["keyboard"]
+        print(f"{k.get('brightness')}/{k.get('max', 3)}")
+    elif args[0].isdigit():
+        cl.call("SetKeyboardBrightness", "u", int(args[0]))
+    else:
+        raise Error("asusludera-cli kbd 0…3")
+
+
+def cmd_aura(cl, args):
+    k = cl.state()["keyboard"]
+    if not args:
+        print(f"{k['mode']} {k['color']} {k['color2']} {k['speed']}")
+        print("светится: " + ", ".join(x for x in ("awake", "boot", "sleep", "shutdown") if k[x]))
+    elif args[0] == "power":
+        on = set(args[1].split(",")) if len(args) > 1 else set()
+        cl.call("SetAuraPower", "bbbb", "awake" in on, "boot" in on, "sleep" in on, "shutdown" in on)
+    else:
+        colors = [a for a in args[1:] if a.startswith("#")]
+        speeds = [a for a in args[1:] if a in ("slow", "normal", "fast")]
+        cl.call("SetAura", "ssss", args[0], colors[0] if colors else k["color"],
+                colors[1] if len(colors) > 1 else k["color2"], speeds[0] if speeds else k["speed"])
+
+
+COMMANDS = {"gpu": cmd_gpu, "kbd": cmd_kbd, "aura": cmd_aura, "status": cmd_status, "profile": cmd_profile, "auto": cmd_auto, "charge": cmd_charge,
             "epp": cmd_epp, "fan": cmd_fan, "power": cmd_power, "import-asusd": cmd_import}
 
 
