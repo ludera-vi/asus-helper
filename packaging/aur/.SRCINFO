@@ -1,6 +1,6 @@
 pkgbase = asus-helper
 	pkgdesc = ASUS ROG/TUF laptop control for KDE Plasma: performance modes, fan curves, power limits, GPU Eco, Aura and Slash lighting (G-Helper-like)
-	pkgver = 0.2.0
+	pkgver = 0.2.1
 	pkgrel = 1
 	url = https://github.com/ludera-vi/asus-helper
 	install = asus-helper.install
@@ -25,7 +25,7 @@ pkgbase = asus-helper
 	conflicts = supergfxctl
 	conflicts = envycontrol
 	conflicts = nvidia-prime
-	source = asus-helper-0.2.0.tar.gz::https://github.com/ludera-vi/asus-helper/archive/refs/tags/v0.2.0.tar.gz
+	source = asus-helper-0.2.1.tar.gz::https://github.com/ludera-vi/asus-helper/archive/refs/tags/v0.2.1.tar.gz
 	sha256sums = SKIP
 
 pkgname = asus-helper
