@@ -151,6 +151,9 @@ systemctl --user stop asus-helper-dev.service 2>/dev/null
 
 # Остатки прежних версий установщика (ставили в другие места) — убираем, чтобы не было двойников
 cleanup_old() {
+    if [ -e /etc/systemd/system/asus-helperd.service ]; then
+        sudo systemctl disable asus-helperd.service 2>/dev/null   # снять ссылку автозапуска на старый файл
+    fi
     sudo rm -f /etc/systemd/system/asus-helperd.service /etc/udev/rules.d/61-igpu-symlink.rules \
                /etc/dbus-1/system.d/org.{asushero,asusludera}.Daemon.conf \
                /usr/share/polkit-1/actions/org.{asushero,asusludera}.policy
