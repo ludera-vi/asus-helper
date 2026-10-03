@@ -571,3 +571,20 @@ class InputActivityTest(unittest.TestCase):
         self.assertTrue(is_activity(ev(4, 4, 30) + ev(1, 30, 1)))          # нажатие A
         self.assertTrue(is_activity(ev(2, 1, -3)))                          # мышь сдвинулась
         self.assertTrue(is_activity(ev(3, 53, 812)))                        # касание тачпада
+
+
+class PowerIndependenceTest(unittest.TestCase):
+    """Лимит одного режима не перетекает в другой; без своего значения — заводской."""
+
+    def setUp(self):
+        fakesys.build(ROOT)
+        self.cfg = Config(os.path.join(CONF, "power.json"))
+        self.modes = Modes(self.cfg, lambda: None)
+
+    def test_no_leak_between_profiles(self):
+        nv = "/sys/class/firmware-attributes/asus-armoury/attributes/nv_temp_target/current_value"
+        self.cfg.data["profiles"]["balanced"]["power_limits"] = {"nv_temp_target": 76, "ppt_pl1_spl": 30}
+        self.modes._apply_power("balanced")
+        self.assertEqual((fakesys.read(ROOT, nv), fakesys.read(ROOT, PL1)), ("76", "30"))
+        self.modes._apply_power("quiet")                      # у Тихого своих нет — заводские
+        self.assertEqual((fakesys.read(ROOT, nv), fakesys.read(ROOT, PL1)), ("87", "35"))

@@ -444,12 +444,7 @@ class Service:
     def do_ResetPowerLimits(self, profile):
         check_profile(profile)
         self.config.profile(profile)["power_limits"] = {}
-        self.config.save()
-        if profile == self.modes.current:
-            # BIOS возвращает свои лимиты только при смене режима
-            self.modes.set_profile("balanced" if profile != "balanced" else "quiet", remember=False)
-            self.modes.set_profile(profile, remember=False)
-        self._changed()
+        self._save_and_reapply(profile)      # лимиты без своего значения — заводские
 
     def do_SetGpuMode(self, mode, force):
         self.do_SetGpuModeFlags(mode, 1 if force else 0)

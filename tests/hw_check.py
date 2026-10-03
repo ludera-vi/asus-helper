@@ -177,8 +177,16 @@ def test_power(s0, c0):
         check(f"{attr} = {target}", wait(lambda: int(read(f"{ARM}/{attr}/current_value")) == target, 3))
     call("SetPowerLimit", "ssi", "balanced", "ppt_pl1_spl", 999)
     check("PL1 999 Вт обрезан до максимума", wait(lambda: int(read(f"{ARM}/ppt_pl1_spl/current_value")) == lims["ppt_pl1_spl"]["max"], 3))
-    check("лимиты Баланса не попали в другие режимы",
+    check("лимиты Баланса не попали в другие режимы (настройки)",
           not config()["profiles"]["quiet"]["power_limits"] and not config()["profiles"]["performance"]["power_limits"])
+    set_profile("quiet")
+    time.sleep(1.5)
+    q = state()["power_limits"]
+    leaked = [a for a, v in q.items() if v["min"] is not None and v["max"] is not None and v["max"] > v["min"]
+              and v["value"] != v["default"]]
+    check("в Тихом заводские лимиты — Баланс не перетёк (железо)", not leaked, ", ".join(leaked))
+    set_profile("balanced")
+    time.sleep(1.5)
     call("ResetPowerLimits", "s", "balanced")
     check("сброс лимитов к BIOS", wait(lambda: int(read(f"{ARM}/ppt_pl1_spl/current_value")) == lims["ppt_pl1_spl"]["default"], 5),
           read(f"{ARM}/ppt_pl1_spl/current_value"))

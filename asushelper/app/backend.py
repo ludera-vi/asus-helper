@@ -150,11 +150,12 @@ class Backend(QObject):
     def _set_config(self, text):
         self._config = json.loads(text)
         self.configChanged.emit()
-        # язык сменили (в окне или командой) — перезапускаемся на новом
+        # язык сменили (в окне или командой) — перезапускаемся на новом. Не перезапускаемся, если язык
+        # задан переменной ASUSHELPER_LANG (она главнее настроек — иначе перезапуск по кругу)
+        import os
         lang = self._config.get("language")
-        if lang in i18n.LANGUAGES and lang != i18n.LANG:
+        if lang in i18n.LANGUAGES and lang != i18n.LANG and "ASUSHELPER_LANG" not in os.environ:
             log.info("язык → %s, перезапускаю окно", lang)
-            import os
             import sys
             os.execv(sys.executable, [sys.executable, "-m", "asushelper.app", *sys.argv[1:]])
 

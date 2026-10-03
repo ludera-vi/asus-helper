@@ -126,9 +126,17 @@ class Modes:
         self._nvidia_powerd(self.ac)
         hw.set_epp(self.config.epp(name))
         hw.set_turbo(self.config.cpu_boost(name))
-        for attr, value in self.config.profile(name)["power_limits"].items():
-            if value is not None:
-                hw.set_armoury(attr, value)
+        # Каждый лимит: заданный для этого режима или заводской (default_value от BIOS). BIOS сам их при смене
+        # режима не возвращает — без этого лимит одного режима «перетекал» бы в другой.
+        mine = self.config.profile(name)["power_limits"]
+        for attr, a in hw.power_limits().items():
+            if a["min"] is None or a["max"] is None or a["max"] <= a["min"]:
+                continue
+            want = mine.get(attr)
+            if want is None:
+                want = a["default"]
+            if want is not None:
+                hw.set_armoury(attr, want)
         self.on_change()
 
     # ---------- таймеры ----------
