@@ -12,6 +12,7 @@ import time
 from gi.repository import GLib
 
 from . import aura, sysfs
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +116,7 @@ class KeyboardIdle:
             # если за это время яркость поменяли клавишами — не перебиваем
             if (aura.brightness() or {}).get("value") == 0:
                 aura.set_brightness(level)
+                log.info(_("подсветка клавиатуры: снова горит"))
 
     def _check(self) -> bool:
         t = self.timeout()
@@ -124,6 +126,7 @@ class KeyboardIdle:
         if b and b["value"] > 0 and time.monotonic() - self.last >= t:
             self.dimmed_from = b["value"]
             aura.set_brightness(0)
+            log.info(_("подсветка клавиатуры: погашена — %d с без нажатий"), t)
         return GLib.SOURCE_CONTINUE
 
     def reset(self) -> None:

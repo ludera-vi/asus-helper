@@ -347,13 +347,6 @@ ColumnLayout {
                 font.weight: Font.DemiBold
             }
         }
-
-        QQC2.Button {
-            Layout.fillWidth: true
-            icon.name: "office-chart-line-forecast-symbolic"
-            text: Theme.tr("Графики: температура, вентиляторы, расход и заряд батареи")
-            onClicked: page.openMonitor()
-        }
     }
 
     // ---------- низ ----------

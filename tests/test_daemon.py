@@ -526,6 +526,31 @@ class AutoEcoTest(unittest.TestCase):
         self.assertEqual(self.started, [])                  # карта и так включена
 
 
+    def test_power_change_during_switch_is_not_lost(self):
+        self.s.modes.ac = True                              # зарядку подключили — карта включалась…
+        self.s.gpu.busy = True
+        self.assertFalse(self.s._auto_eco())                # …пока шло переключение, «Авто» ждёт
+        self.s.modes.ac = False                             # …и выдернули
+        fakesys._w(ROOT, "/sys/class/firmware-attributes/asus-armoury/attributes/dgpu_disable/current_value", 0)
+        self.gpu.holders = lambda gpu=None: []
+        self.s.gpu.busy = False
+        self.s._gpu_done(None)
+        self.assertEqual(self.started, [True])              # после переключения — Eco
+
+    def test_ready_card_reported_on_and_next_request_queued(self):
+        self.s.state()
+        self.s.gpu.busy, self.s.gpu.ready = True, True      # карта работает, BIOS ещё отвечает
+        try:
+            g = self.s.state()["gpu"]
+            self.assertFalse(g["switching"])
+            self.assertEqual(g["state"], "active")
+            self.s.do_SetGpuModeFlags("eco", 0)              # не ошибка — в очередь
+            self.assertEqual(self.s.gpu.pending, (True, False, False))
+            self.assertEqual(self.started, [])
+        finally:
+            self.s.gpu.busy = self.s.gpu.ready = False
+            self.s.gpu.pending = None
+
     def test_stuck_driver_blocks_switching(self):
         class Hung:
             def poll(self):

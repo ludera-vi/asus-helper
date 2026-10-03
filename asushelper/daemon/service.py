@@ -118,7 +118,7 @@ class Service:
         self.config = config
         self.listeners = []   # другие интерфейсы (эмуляция PPD) — тоже хотят знать о смене режима
         self.modes = Modes(config, self._changed)
-        self.gpu = gpu.Switcher(self._gpu_done)
+        self.gpu = gpu.Switcher(self._gpu_done, self._changed)
         self._gpu_cache = {}
         self._state_cache = {}
         self.auto_waiting: list[str] | None = None   # «Авто» ждёт, пока эти программы отпустят NVIDIA
@@ -180,6 +180,10 @@ class Service:
     def _gpu_state(self) -> dict:
         # Во время переключения шину PCI не читаем: при её пересканировании (включение NVIDIA) чтение
         # /sys/bus/pci ждёт до 10 с, и демон перестал бы отвечать. Отдаём последнее известное + цель.
+        if self.gpu.busy and self.gpu.ready:
+            # карта уже работает — для окна включение закончено, BIOS дозавершает его в фоне
+            return dict(self._gpu_cache, state="active", switching=False, target=None, auto_waiting=None,
+                        auto_eco=self.config.data["gpu"]["auto_eco"], error=None, can_force=False)
         if self.gpu.busy:
             return dict(self._gpu_cache, switching=True, target=self.gpu.target, auto_waiting=None,
                         auto_eco=self.config.data["gpu"]["auto_eco"], error=None, can_force=False)
@@ -315,6 +319,9 @@ class Service:
         self.bus.emit_signal(None, OBJECT_PATH, INTERFACE, "GpuSwitchFinished",
                              GLib.Variant("(ss)", (gpu.state(), error or "")))
         self._changed()
+        if not error and not self.gpu.busy:
+            # питание могло смениться, пока карта переключалась, — «Авто» тогда событие пропустило
+            self._auto_eco()
 
     def _watch_brightness(self) -> None:
         import os
@@ -491,7 +498,7 @@ class Service:
             raise Failed(_("на этом ноутбуке нельзя выключать видеокарту через BIOS"))
         if mode not in ("eco", "standard"):
             raise Failed(_("режим видеокарты: eco или standard"))
-        if self.gpu.busy:
+        if self.gpu.busy and not self.gpu.ready:
             raise Failed(_("видеокарта уже переключается"))
         if gpu.is_stuck():
             raise Failed(STUCK_MSG())
@@ -501,7 +508,11 @@ class Service:
             # ручной выбор отменяет «Оптимальный», иначе при смене питания карта переключится сама
             self.config.data["gpu"]["auto_eco"] = False
             self.config.save()
-        self.gpu.start(mode == "eco", force, ignore_displays)
+        if self.gpu.busy:
+            # карта уже работает, BIOS дозавершает включение — выполним сразу после
+            self.gpu.pending = (mode == "eco", force, ignore_displays)
+        else:
+            self.gpu.start(mode == "eco", force, ignore_displays)
         self._changed()
 
     def do_SetGpuAutoEco(self, enabled):
