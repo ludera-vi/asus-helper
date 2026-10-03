@@ -364,8 +364,70 @@ def fixup() -> bool:
     return True
 
 
+def _unload_and_remove(gpu: str) -> None:
+    log.info(_("останавливаю сервисы NVIDIA"))
+    subprocess.run(["systemctl", "stop", *SERVICES], capture_output=True)
+    log.info(_("выгружаю драйвер NVIDIA"))
+    if not _unload_driver():
+        _load_driver()
+        _start_services()
+        raise GpuError(_("драйвер не выгрузился (что-то ещё использует карту) — всё возвращено как было"), busy=True)
+    log.info(_("убираю NVIDIA с шины PCI"))
+    _remove_from_bus(gpu)
+
+
+# Устройства NVIDIA на время выключения закрыты для всех, кроме root: иначе закрытая программа (или
+# перезапущенный процесс браузера) сразу открыла бы карту снова и драйвер не выгрузился бы.
+def _nvidia_nodes(gpu: str) -> list[str]:
+    nodes = [f"/dev/{n}" for n in os.listdir("/dev") if n.startswith("nvidia") and n != "nvidia-caps"]
+    drm = sysfs.path(f"{PCI}/{gpu}/drm")
+    if os.path.isdir(drm):
+        nodes += [f"/dev/dri/{n}" for n in os.listdir(drm) if n.startswith(("card", "renderD"))]
+    return nodes
+
+
+def _block_nodes(gpu: str) -> dict[str, int]:
+    if sysfs.ROOT:
+        return {}
+    saved = {}
+    for n in _nvidia_nodes(gpu):
+        try:
+            saved[n] = os.stat(n).st_mode & 0o7777
+            os.chmod(n, 0)
+        except OSError:
+            pass
+    return saved
+
+
+def _unblock_nodes(saved: dict[str, int]) -> None:
+    for n, mode in saved.items():
+        try:
+            os.chmod(n, mode)        # после выгрузки драйвера части узлов уже нет — это нормально
+        except OSError:
+            pass
+
+
+def _close(busy: list[tuple[int, str]], gpu: str) -> bool:
+    """SIGTERM, до 4 с подождать, оставшимся — SIGKILL. True — карту больше никто не держит."""
+    for sig, wait in ((signal.SIGTERM, 4.0), (signal.SIGKILL, 2.0)):
+        for pid, _comm in busy:
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+        end = time.monotonic() + wait
+        while time.monotonic() < end:
+            time.sleep(0.25)
+            busy = [(p, c) for p, c in holders(gpu) if not is_protected(p, c)]
+            if not busy:
+                return True
+    return False
+
+
 def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
-    """Eco. GpuError с понятным текстом, если нельзя; при ошибке всё возвращается как было."""
+    """Eco: карта выключается, кто бы её ни держал (кроме рабочего стола и системы — их закрыть нельзя).
+    GpuError с понятным текстом, если нельзя; при ошибке всё возвращается как было. force оставлен для
+    совместимости вызовов — программы на NVIDIA закрываются всегда."""
     gpu = find_gpu()
     if gpu and not ignore_displays and (ext := external_displays(gpu)):
         raise GpuError(_("К NVIDIA подключён монитор ({0}) — после выключения он погаснет").format(', '.join(ext)))
@@ -384,27 +446,20 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
             if protected:
                 # закрывать нельзя — это рабочий стол или система
                 raise GpuError(_("NVIDIA держит рабочий стол ({0}). Он отпустит её после выхода из сеанса и входа снова — один раз после установки Asus-helper").format(', '.join(protected)), busy=True)
-            if not force:
-                raise GpuError(_("NVIDIA используют: {0}").format(listed), can_force=True, busy=True)
+            # Обычные программы закрываем всегда (Eco должен выключать карту, кто бы её ни держал). Сначала
+            # закрываем доступ к устройствам NVIDIA: служебный процесс отрисовки браузера или Electron
+            # перезапустится сам и откроет уже только Intel — вкладки и окна не пропадут.
             log.info(_("закрываю программы на NVIDIA: %s"), listed)
-            for pid, _comm in busy:
-                try:
-                    os.kill(pid, signal.SIGTERM)
-                except OSError:
-                    pass
-            time.sleep(3)
-            if busy := holders(gpu):
-                raise GpuError(_("программы не закрылись: ") + ", ".join(sorted({c for _, c in busy})))
-
-        log.info(_("останавливаю сервисы NVIDIA"))
-        subprocess.run(["systemctl", "stop", *SERVICES], capture_output=True)
-        log.info(_("выгружаю драйвер NVIDIA"))
-        if not _unload_driver():
-            _load_driver()
-            _start_services()
-            raise GpuError(_("драйвер не выгрузился (что-то ещё использует карту) — всё возвращено как было"), busy=True)
-        log.info(_("убираю NVIDIA с шины PCI"))
-        _remove_from_bus(gpu)
+            blocked = _block_nodes(gpu)
+            if not _close(busy, gpu):
+                _unblock_nodes(blocked)
+                raise GpuError(_("программы не закрылись: ") + ", ".join(names(holders(gpu))), busy=True)
+        else:
+            blocked = _block_nodes(gpu)
+        try:
+            _unload_and_remove(gpu)
+        finally:
+            _unblock_nodes(blocked)
 
     _settle()
     log.info(_("отключаю NVIDIA в BIOS"))

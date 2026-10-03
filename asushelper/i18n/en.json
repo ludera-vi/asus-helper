@@ -407,5 +407,6 @@
  "Как в системе (KDE)": "System (KDE)",
  "Оригинальное (тёмное)": "Original (dark)",
  "оформление: %s (%s)": "appearance: %s (%s)",
- "оформление → %s, перезапускаю окно": "appearance → %s, restarting the window"
+ "оформление → %s, перезапускаю окно": "appearance → %s, restarting the window",
+ "сон: вентиляторы — по кривой BIOS": "sleep: fans follow the BIOS curve"
 }

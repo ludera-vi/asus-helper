@@ -236,6 +236,16 @@ class Service:
         self._auto_eco()
         self._watch_brightness()
 
+    def before_sleep(self) -> None:
+        """Во сне — заводские кривые вентиляторов BIOS. Своя кривая остаётся в контроллере и во сне, и с её
+        минимумом (даже 1–2 %) вентиляторы крутились бы при закрытой крышке; BIOS на холодную их
+        останавливает. После пробуждения resumed() вернёт свою кривую."""
+        self.modes._cancel_timers()
+        if hw.has_fan_curves() and any((hw.fan_curve(f) or {}).get("enabled") for f in hw.curve_fans()):
+            for f in hw.curve_fans():
+                hw.set_fan_curve_mode(f, hw.CURVE_BIOS)
+            log.info(_("сон: вентиляторы — по кривой BIOS"))
+
     def resumed(self) -> None:
         self._auto_retries = 0
         self.modes.ac = hw.on_ac()
@@ -292,9 +302,10 @@ class Service:
         if gpu.external_displays():
             log.info(_("«Авто»: к NVIDIA подключён монитор — не выключаю"))
             return self._auto_changed(waiting_before)
-        busy = gpu.names(gpu.holders())
+        # обычные программы на NVIDIA Eco закроет сам; ждать стоит только рабочий стол или экран входа
+        # (например, сразу после загрузки) — их закрыть нельзя, но они скоро отпустят карту
+        busy = gpu.names([(p, c) for p, c in gpu.holders() if gpu.is_protected(p, c)])
         if busy:
-            # не ломаем работу программ: выключим, когда освободится
             if busy != waiting_before:
                 log.info(_("«Авто»: батарея, но NVIDIA занята (%s) — жду"), ", ".join(busy))
             self.auto_waiting = busy

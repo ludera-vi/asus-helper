@@ -97,6 +97,7 @@ def main() -> int:
     def on_sleep(_c, _s, _p, _i, _sig, params):
         going_to_sleep = params.unpack()[0]
         if going_to_sleep:
+            service.before_sleep()
             if gpu.supported() and not service.gpu.busy:
                 gpu.fixup()
             while inhibitor:

@@ -17,6 +17,7 @@ Item {
     // в оригинальной теме раздел — карточка со своим фоном, в системной — как в KDE, без рамок
     readonly property real pad: Theme.original ? Kirigami.Units.largeSpacing : 0
     Layout.fillWidth: true
+    Layout.minimumWidth: 0              // раздел не шире окна, что бы ни было внутри
     implicitWidth: column.implicitWidth + pad * 2
     implicitHeight: column.implicitHeight + pad * 2
 
@@ -55,12 +56,21 @@ Item {
                 font.weight: Font.DemiBold
                 color: Kirigami.Theme.highlightColor
             }
-            Item { Layout.fillWidth: true }
+            // справа — датчики и состояние; длинный текст не раздвигает окно, а обрезается (целиком — в подсказке)
             QQC2.Label {
+                id: infoLabel
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                horizontalAlignment: Text.AlignRight
+                elide: Text.ElideRight
                 text: section.info
                 color: section.infoColor
                 font: Kirigami.Theme.smallFont
                 opacity: 0.8
+                HoverHandler { id: infoHover }
+                QQC2.ToolTip.visible: infoHover.hovered && infoLabel.truncated
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                QQC2.ToolTip.text: section.info
             }
         }
 

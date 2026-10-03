@@ -405,13 +405,27 @@ class GpuSafetyTest(unittest.TestCase):
         self.assertIn("рабочий стол", str(e.exception))
         self.assertEqual(self.killed, [])
 
-    def test_user_apps_can_be_forced(self):
-        self.gpu.holders = lambda gpu=None: [(4242, "steam")]
+    def test_user_apps_are_closed_always(self):
+        # браузер (служебный процесс отрисовки) держит карту — закрываем без вопросов и выключаем
+        held = [[(4242, "brave")]]
+        self.gpu.holders = lambda gpu=None: held[0]
         self.gpu.is_protected = lambda pid, comm: False
-        with self.assertRaises(self.gpu.GpuError) as e:
-            self.gpu.turn_off(force=False)
-        self.assertTrue(e.exception.can_force)
-        self.assertEqual(self.killed, [])
+        blocked, unloaded = [], []
+        from unittest import mock
+        with mock.patch.object(self.gpu, "_block_nodes", side_effect=lambda g: blocked.append(g) or {"/dev/nvidia0": 0o666}), \
+             mock.patch.object(self.gpu, "_unblock_nodes") as unblock, \
+             mock.patch.object(self.gpu, "_unload_and_remove", side_effect=lambda g: unloaded.append(g)), \
+             mock.patch.object(self.gpu.time, "sleep"), \
+             mock.patch.object(self.gpu.sysfs, "write", return_value=True):
+            self.gpu.os.kill = lambda pid, sig: (self.killed.append(pid), held.__setitem__(0, []))
+            try:
+                self.gpu.turn_off(force=False)
+            except self.gpu.GpuError:
+                pass                                        # «карта всё ещё видна» — find_gpu подменён
+        self.assertEqual(self.killed, [4242])
+        self.assertEqual(blocked, ["0000:01:00.0"])         # сначала закрыт доступ к устройствам
+        self.assertEqual(unloaded, ["0000:01:00.0"])
+        unblock.assert_called_with({"/dev/nvidia0": 0o666})  # и всегда возвращён
 
     def test_root_process_protected(self):
         self.assertTrue(self.gpu.is_protected(1, "anything"))
@@ -517,19 +531,24 @@ class AutoEcoTest(unittest.TestCase):
         if self.s._auto_timer:
             GLib.source_remove(self.s._auto_timer)
 
-    def test_waits_while_busy_then_turns_off(self):
-        self.gpu.holders = lambda gpu=None: [(4242, "resolve")]
+    def test_waits_only_for_desktop_then_turns_off(self):
+        self.gpu.holders = lambda gpu=None: [(4242, "kwin_wayland")]   # экран входа сразу после загрузки
         self.assertTrue(self.s._auto_eco())
-        self.assertEqual(self.s.auto_waiting, ["resolve"])
+        self.assertEqual(self.s.auto_waiting, ["kwin_wayland"])
         self.assertEqual(self.started, [])                  # не выключаем
-        self.assertEqual(self.s.state()["gpu"]["auto_waiting"], ["resolve"])
-        self.gpu.holders = lambda gpu=None: []               # программа закрылась
+        self.assertEqual(self.s.state()["gpu"]["auto_waiting"], ["kwin_wayland"])
+        self.gpu.holders = lambda gpu=None: []               # экран входа закрылся
         self.assertFalse(self.s._auto_eco())
         self.assertIsNone(self.s.auto_waiting)
         self.assertEqual(self.started, [True])              # Eco
 
+    def test_user_apps_do_not_block_auto(self):
+        self.gpu.holders = lambda gpu=None: [(4242, "brave")]
+        self.assertFalse(self.s._auto_eco())
+        self.assertEqual(self.started, [True])              # Eco закроет их сам
+
     def test_charger_cancels_waiting(self):
-        self.gpu.holders = lambda gpu=None: [(4242, "steam")]
+        self.gpu.holders = lambda gpu=None: [(4242, "Xwayland")]
         self.s._auto_eco()
         self.s.modes.ac = True
         self.assertFalse(self.s._auto_eco())

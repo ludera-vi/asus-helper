@@ -151,13 +151,6 @@ ColumnLayout {
             text: page.gpu.error || ""
             actions: [
                 Kirigami.Action {
-                    // только обычные программы пользователя — рабочий стол и систему закрывать нельзя
-                    visible: !!page.gpu.can_force
-                    text: Theme.tr("Закрыть их и выключить")
-                    icon.name: "process-stop-symbolic"
-                    onTriggered: backend.setGpuMode("eco", true)
-                },
-                Kirigami.Action {
                     visible: !!page.gpu.desktop_holds
                     text: Theme.tr("Выйти из сеанса")
                     icon.name: "system-log-out-symbolic"
