@@ -12,6 +12,10 @@ ColumnLayout {
     spacing: Kirigami.Units.smallSpacing
 
     RowLayout {
+        // такой же высоты, как плитки режимов на главной странице
+        Layout.fillWidth: true
+        Layout.preferredHeight: Kirigami.Units.gridUnit * 4
+        Layout.maximumHeight: Kirigami.Units.gridUnit * 4
         spacing: Kirigami.Units.smallSpacing
         Repeater {
             model: Theme.profiles

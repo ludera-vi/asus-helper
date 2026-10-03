@@ -74,6 +74,19 @@ elif [ "$UILANG" = en ]; then
     export LC_MESSAGES=C.UTF-8; unset LANGUAGE
 fi
 
+# ---------- оформление окна ----------
+APPCFG="${XDG_CONFIG_HOME:-$HOME/.config}/asus-helper/app.json"
+UITHEME=$(grep -o '"theme": *"[a-z]*"' "$APPCFG" 2>/dev/null | grep -o '[a-z]*"$' | tr -d '"')
+if [ -z "$UITHEME" ] || [ $UPDATE = 0 ]; then
+    echo
+    echo "  ${B}$(L "Оформление окна" "Window appearance")${R}"
+    echo "    1) $(L "Как в системе — цвета и стиль KDE" "System — KDE colours and style")"
+    echo "    2) $(L "Оригинальное — тёмное, в духе G-Helper" "Original — dark, in the spirit of G-Helper")"
+    explain "$(L "Сменить можно и потом: кнопка оформления внизу окна." "You can change it later: the appearance button at the bottom of the window.")"
+    read -rp "  > [1] " choice
+    case "${choice:-1}" in 2) UITHEME=original ;; *) UITHEME=system ;; esac
+fi
+
 if [ $UPDATE = 1 ] && [ ! -e /usr/local/lib/systemd/system/asus-helperd.service ] && [ ! -e /etc/systemd/system/asus-helperd.service ]; then
     L "Asus-helper ещё не установлен — запустите ./install.sh без --update" "Asus-helper is not installed yet — run ./install.sh without --update"; echo
     exit 1
@@ -225,6 +238,20 @@ if [ ! -e /etc/asus-helper/config.json ] && [ -d /etc/asusd ]; then
     step "$(L "Перенос настроек из /etc/asusd" "Imported settings from /etc/asusd")" sudo env PYTHONPATH="$LIB" python3 -m asushelper.cli import-asusd
 fi
 step "$(L "Язык: русский" "Language: English")" sudo env PYTHONPATH="$LIB" python3 -m asushelper.cli language "$UILANG" --local
+save_theme() {
+    python3 - "$APPCFG" "$UITHEME" <<'PY'
+import json, os, sys
+path, theme = sys.argv[1], sys.argv[2]
+try:
+    data = json.load(open(path))
+except (OSError, ValueError):
+    data = {}
+data["theme"] = theme
+os.makedirs(os.path.dirname(path), exist_ok=True)
+json.dump(data, open(path, "w"), indent=2)
+PY
+}
+step "$(L "Оформление: " "Appearance: ")$( [ "$UITHEME" = original ] && L "оригинальное" "original" || L "как в системе" "system")" save_theme
 
 step "$(L "Демон asus-helperd включён" "asus-helperd daemon enabled")" sudo systemctl enable asus-helperd.service
 step "$(L "Демон запущен с новой версией" "Daemon started with the new version")" sudo systemctl restart asus-helperd.service

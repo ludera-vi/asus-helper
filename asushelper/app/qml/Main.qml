@@ -59,18 +59,42 @@ Window {
 
     Binding { target: Theme; property: "lang"; value: backend.language }
     Binding { target: Theme; property: "dict"; value: backend.translations }
-    Binding { target: Theme; property: "positive"; value: Kirigami.Theme.positiveTextColor }
-    Binding { target: Theme; property: "highlight"; value: Kirigami.Theme.highlightColor }
-    Binding { target: Theme; property: "negative"; value: Kirigami.Theme.negativeTextColor }
-    Binding { target: Theme; property: "neutral"; value: Kirigami.Theme.neutralTextColor }
+    readonly property bool original: backend.theme === "original"
+    readonly property var oc: originalColors
+    Binding { target: Theme; property: "original"; value: win.original }
+    Binding { target: Theme; property: "card"; value: win.oc.card; when: win.original }
+    Binding { target: Theme; property: "positive"; value: win.original ? win.oc.positive : Kirigami.Theme.positiveTextColor }
+    Binding { target: Theme; property: "highlight"; value: win.original ? win.oc.accent : Kirigami.Theme.highlightColor }
+    Binding { target: Theme; property: "negative"; value: win.original ? win.oc.negative : Kirigami.Theme.negativeTextColor }
+    Binding { target: Theme; property: "neutral"; value: win.original ? win.oc.neutral : Kirigami.Theme.neutralTextColor }
+
+    // Оригинальная тема: свои цвета для всего, что рисует Kirigami (заголовки, сообщения, иконки, плитки)
+    Binding { target: frame.Kirigami.Theme; property: "backgroundColor"; value: win.oc.window; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "alternateBackgroundColor"; value: win.oc.card; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "textColor"; value: win.oc.text; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "disabledTextColor"; value: win.oc.disabled; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "highlightColor"; value: win.oc.accent; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "highlightedTextColor"; value: "#ffffff"; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "focusColor"; value: win.oc.accent; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "hoverColor"; value: win.oc.accent; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "linkColor"; value: win.oc.accent; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "activeTextColor"; value: win.oc.accent; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "positiveTextColor"; value: win.oc.positive; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "negativeTextColor"; value: win.oc.negative; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "neutralTextColor"; value: win.oc.neutral; when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "positiveBackgroundColor"; value: Qt.alpha(win.oc.positive, 0.2); when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "negativeBackgroundColor"; value: Qt.alpha(win.oc.negative, 0.2); when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "neutralBackgroundColor"; value: Qt.alpha(win.oc.neutral, 0.2); when: win.original }
+    Binding { target: frame.Kirigami.Theme; property: "activeBackgroundColor"; value: Qt.alpha(win.oc.accent, 0.2); when: win.original }
 
     Shortcut { sequence: "Escape"; onActivated: stack.depth > 1 ? stack.pop() : (win.visible = false) }
 
     Rectangle {
+        id: frame
         anchors.fill: parent
         radius: Kirigami.Units.cornerRadius * 3
         color: Kirigami.Theme.backgroundColor
-        border.color: Qt.alpha(Kirigami.Theme.textColor, 0.15)
+        border.color: win.original ? win.oc.border : Qt.alpha(Kirigami.Theme.textColor, 0.15)
         border.width: 1
         clip: true
 

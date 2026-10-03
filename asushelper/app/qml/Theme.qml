@@ -1,4 +1,4 @@
-// Общие справочники окна: названия, иконки и цвета режимов. Цвета — только из темы KDE.
+// Общие справочники окна: названия, иконки и цвета режимов. Цвета — из темы KDE или оригинальной темы.
 pragma Singleton
 import QtQuick
 
@@ -8,6 +8,10 @@ Item {
     property color highlight: "steelblue"
     property color negative: "red"
     property color neutral: "orange"
+
+    // Оформление: системное (цвета KDE) или оригинальное (своя тёмная тема) — задаёт окно
+    property bool original: false
+    property color card: "transparent"     // фон разделов-карточек в оригинальной теме
 
     // Перевод: язык и словарь «русская строка → перевод» передаёт окно (Main.qml) из программы
     property string lang: "ru"

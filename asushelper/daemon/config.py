@@ -67,7 +67,7 @@ DEFAULTS = {
         "color2": "#000000",      # второй цвет для breathe
         "speed": "normal",        # slow | normal | fast
         # когда светиться
-        "awake": True, "boot": True, "sleep": True, "shutdown": True,
+        "awake": True, "boot": False, "sleep": False, "shutdown": False,
     },
 }
 

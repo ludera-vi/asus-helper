@@ -399,5 +399,13 @@
  "Рабочий стол KDE запущен до установки и работает на %1 — выключить её можно будет после выхода из сеанса и входа снова (один раз)": "The KDE desktop started before the install and runs on %1 — it can be turned off after you log out and back in (once)",
  "«Авто»: карта занята — попробую снова через %d с": "Auto: the GPU is busy — will retry in %d s",
  "Мощность и процессор": "Power and CPU",
- "лимиты мощности, Turbo Boost, энергосбережение": "power limits, Turbo Boost, power saving"
+ "лимиты мощности, Turbo Boost, энергосбережение": "power limits, Turbo Boost, power saving",
+ "Оформление": "Appearance",
+ "Оформление: %1": "Appearance: %1",
+ "оригинальное": "original",
+ "как в системе": "system",
+ "Как в системе (KDE)": "System (KDE)",
+ "Оригинальное (тёмное)": "Original (dark)",
+ "оформление: %s (%s)": "appearance: %s (%s)",
+ "оформление → %s, перезапускаю окно": "appearance → %s, restarting the window"
 }

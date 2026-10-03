@@ -379,6 +379,35 @@ ColumnLayout {
             onToggled: backend.setToggle("boot_sound", checked)
         }
         Item { Layout.fillWidth: true }
+        // оформление: как в системе (KDE) или оригинальное — окно перезапустится в выбранном
+        QQC2.ToolButton {
+            id: themeButton
+            icon.name: "color-management"
+            display: QQC2.AbstractButton.IconOnly
+            text: Theme.tr("Оформление")
+            onClicked: themeMenu.open()
+            QQC2.ToolTip.visible: hovered && !themeMenu.visible
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+            QQC2.ToolTip.text: Theme.tr("Оформление: %1").arg(backend.theme === "original" ? Theme.tr("оригинальное") : Theme.tr("как в системе"))
+            QQC2.Menu {
+                id: themeMenu
+                y: -height
+                QQC2.MenuItem {
+                    text: Theme.tr("Как в системе (KDE)")
+                    checkable: true
+                    checked: backend.themeWanted === "system"
+                    // стиля KDE нет (не Plasma или не установлен qqc2-desktop-style) — выбрать нельзя
+                    enabled: backend.kdeStyle
+                    onTriggered: backend.setTheme("system")
+                }
+                QQC2.MenuItem {
+                    text: Theme.tr("Оригинальное (тёмное)")
+                    checkable: true
+                    checked: backend.themeWanted === "original"
+                    onTriggered: backend.setTheme("original")
+                }
+            }
+        }
         // язык: RU / EN — программа перезапустится на выбранном
         Repeater {
             model: ["ru", "en"]

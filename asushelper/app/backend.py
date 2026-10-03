@@ -42,9 +42,10 @@ class Backend(QObject):
     factoryCurves = Signal("QVariant")   # ответ на requestFactoryCurves
     message = Signal(str, bool)          # текст, ошибка ли
 
-    def __init__(self, bus: Gio.DBusConnection):
+    def __init__(self, bus: Gio.DBusConnection, theme: str = "system"):
         super().__init__()
         self.bus = bus
+        self._theme = theme          # оформление, с которым окно запущено (может быть запасным)
         self._state = {}
         self._config = {}
         self._display = {}
@@ -75,6 +76,11 @@ class Backend(QObject):
     def _get_history(self): return self._history
     def _get_language(self): return i18n.LANG
     def _get_translations(self): return self._translations
+    def _get_theme(self): return self._theme
+    def _get_theme_wanted(self): return self._settings.get("theme") or "system"
+    def _get_kde_style(self):
+        from .theme import kde_style_available
+        return kde_style_available()
 
     def _set_active(self, v: bool):
         """Окно открыто — опрашиваем датчики; закрыто — только сигналы демона."""
@@ -99,6 +105,9 @@ class Backend(QObject):
     history = Property("QVariant", _get_history, notify=historyChanged)
     languageChanged = Signal()
     language = Property(str, _get_language, constant=True)
+    theme = Property(str, _get_theme, constant=True)
+    themeWanted = Property(str, _get_theme_wanted, constant=True)
+    kdeStyle = Property(bool, _get_kde_style, constant=True)
     translations = Property("QVariant", _get_translations, constant=True)
 
     # ---------- D-Bus ----------
@@ -274,14 +283,29 @@ class Backend(QObject):
         self._display = info
         self.displayChanged.emit()
 
-    @Slot(bool)
-    def setScreenAuto(self, v):
-        self._settings["screen_auto"] = bool(v)
+    def _save_settings(self) -> None:
         try:
             SETTINGS.parent.mkdir(parents=True, exist_ok=True)
             SETTINGS.write_text(json.dumps(self._settings, indent=2))
         except OSError as e:
             log.warning(_("не сохранить %s: %s"), SETTINGS, e)
+
+    @Slot(str)
+    def setTheme(self, name):
+        """Сменить оформление: стиль QtQuick меняется только при запуске — перезапускаем окно."""
+        from .theme import THEMES
+        if name not in THEMES or name == self._get_theme_wanted():
+            return
+        self._settings["theme"] = name
+        self._save_settings()
+        log.info(_("оформление → %s, перезапускаю окно"), name)
+        import sys
+        os.execv(sys.executable, [sys.executable, "-m", "asushelper.app", "--show", *sys.argv[1:]])
+
+    @Slot(bool)
+    def setScreenAuto(self, v):
+        self._settings["screen_auto"] = bool(v)
+        self._save_settings()
         self.screenAutoChanged.emit()
         if v:
             self._screen_auto_apply()

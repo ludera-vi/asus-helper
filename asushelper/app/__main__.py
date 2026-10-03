@@ -11,19 +11,19 @@ import os
 import sys
 from pathlib import Path
 
-os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "org.kde.desktop")
-
 import gi  # noqa: E402
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
 from PySide6.QtCore import QMetaObject, QRectF, Qt, QUrl  # noqa: E402
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
+from PySide6.QtQuickControls2 import QQuickStyle  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
 
 from .. import __version__  # noqa: E402
 from ..agent import Agent  # noqa: E402
-from .backend import Backend  # noqa: E402
+from .backend import Backend, load_settings  # noqa: E402
+from . import theme as themes  # noqa: E402
 from ..i18n import _
 
 log = logging.getLogger("asus-helper")
@@ -189,13 +189,22 @@ def main() -> int:
     app.setWindowIcon(QIcon.fromTheme("asus-helper", make_icon(PROFILE_FILL["balanced"], gpu_on=False)))
     app.setQuitOnLastWindowClosed(False)
 
+    # оформление выбирается до загрузки окна: стиль QtQuick потом не сменить — только перезапуском
+    theme = themes.choose(load_settings())
+    QQuickStyle.setStyle(themes.style_for(theme))
+    if theme == themes.ORIGINAL:
+        app.setStyle("Fusion")                       # и меню значка в трее — в той же теме
+        app.setPalette(themes.original_palette())
+    log.info(_("оформление: %s (%s)"), theme, QQuickStyle.name())
+
     system = Gio.bus_get_sync(Gio.BusType.SYSTEM)
-    backend = Backend(system)
+    backend = Backend(system, theme)
     if not args.no_osd:
         app.agent = Agent(system, session)   # держим ссылку
 
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", backend)
+    engine.rootContext().setContextProperty("originalColors", themes.ORIGINAL_COLORS)
     engine.setInitialProperties({"anchorTop": panel_on_top()})
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("qml") / "Main.qml")))
     if not engine.rootObjects():
