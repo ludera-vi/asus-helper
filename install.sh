@@ -184,9 +184,15 @@ cleanup_old() {
                /usr/share/polkit-1/actions/org.{asushero,asusludera}.policy
     rm -f "$HOME/.config/systemd/user/plasma-kwin_wayland.service.d/asus-helper-igpu.conf" \
           "$HOME/.config/environment.d/90-kwin-igpu.conf" "$HOME/.config/environment.d/91-igpu-apps.conf" \
-          "$HOME/.local/share/applications/asus-helper.desktop" "$HOME/.config/autostart/asus-helper.desktop" \
+          "$HOME/.config/autostart/asus-helper.desktop" \
           "$HOME/.local/share/icons/hicolor/scalable/apps/asus-helper.svg"
     rmdir "$HOME/.config/systemd/user/plasma-kwin_wayland.service.d" 2>/dev/null
+    # Ярлык прежней версии лежал в ~/.local/share/applications, и горячие клавиши KDE (клавиша ROG)
+    # помнят этот путь до следующего входа — оставляем там ссылку на новый ярлык
+    local old_desktop="$HOME/.local/share/applications/asus-helper.desktop"
+    if [ -e "$old_desktop" ] || [ -L "$old_desktop" ]; then
+        ln -sf /usr/local/share/applications/asus-helper.desktop "$old_desktop"
+    fi
     true
 }
 step "$(L "Остатки прежних версий убраны" "Leftovers of older versions removed")" cleanup_old
