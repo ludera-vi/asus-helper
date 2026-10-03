@@ -12,8 +12,9 @@ from pathlib import Path
 from gi.repository import Gio, GLib
 from PySide6.QtCore import Property, QObject, QProcess, QTimer, Signal, Slot
 
-from .. import BUS_NAME, INTERFACE, OBJECT_PATH
+from .. import BUS_NAME, INTERFACE, OBJECT_PATH, i18n
 from . import display
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class Backend(QObject):
         self._settings = load_settings()
         self._last_ac = None
         self._history = {}
+        self._translations = i18n.table()
         self._timer = QTimer(self, interval=POLL_MS, timeout=self.refresh)
         bus.signal_subscribe(BUS_NAME, INTERFACE, "StateChanged", OBJECT_PATH, None,
                              Gio.DBusSignalFlags.NONE, self._on_state_signal)
@@ -71,6 +73,8 @@ class Backend(QObject):
     def _get_active(self): return self._active
     def _get_screen_auto(self): return bool(self._settings.get("screen_auto", False))
     def _get_history(self): return self._history
+    def _get_language(self): return i18n.LANG
+    def _get_translations(self): return self._translations
 
     def _set_active(self, v: bool):
         """Окно открыто — опрашиваем датчики; закрыто — только сигналы демона."""
@@ -93,6 +97,9 @@ class Backend(QObject):
     active = Property(bool, _get_active, _set_active, notify=activeChanged)
     screenAuto = Property(bool, _get_screen_auto, notify=screenAutoChanged)
     history = Property("QVariant", _get_history, notify=historyChanged)
+    languageChanged = Signal()
+    language = Property(str, _get_language, constant=True)
+    translations = Property("QVariant", _get_translations, constant=True)
 
     # ---------- D-Bus ----------
     def _call(self, method: str, sig: str | None = None, args: tuple = (), done=None, quiet=False):
@@ -103,7 +110,7 @@ class Backend(QObject):
                 self._set_connected("ServiceUnknown" not in e.message and "NameHasNoOwner" not in e.message)
                 if not quiet:
                     text = e.message.split(": ", 1)[-1] if "GDBus.Error" in e.message else e.message
-                    self.message.emit(text if self._connected else "Демон Asus-helper не запущен", True)
+                    self.message.emit(text if self._connected else _("Демон Asus-helper не запущен"), True)
                 return
             self._set_connected(True)
             if done:
@@ -143,6 +150,13 @@ class Backend(QObject):
     def _set_config(self, text):
         self._config = json.loads(text)
         self.configChanged.emit()
+        # язык сменили (в окне или командой) — перезапускаемся на новом
+        lang = self._config.get("language")
+        if lang in i18n.LANGUAGES and lang != i18n.LANG:
+            log.info("язык → %s, перезапускаю окно", lang)
+            import os
+            import sys
+            os.execv(sys.executable, [sys.executable, "-m", "asushelper.app", *sys.argv[1:]])
 
     @Slot()
     def refresh(self, config: bool = False):
@@ -218,7 +232,7 @@ class Backend(QObject):
             try:
                 rows = conn.call_finish(res).unpack()[0]
             except GLib.Error as e:
-                log.info("история UPower: %s", e.message)
+                log.info(_("история UPower: %s"), e.message)
                 return
             # (время, заряд %, состояние); UPower отдаёт от новых к старым
             self._history = dict(self._history, charge=sorted([[t, v] for t, v, st in rows if t and st and v > 0]))
@@ -226,6 +240,9 @@ class Backend(QObject):
         self.bus.call("org.freedesktop.UPower", "/org/freedesktop/UPower/devices/battery_BAT1",
                       "org.freedesktop.UPower.Device", "GetHistory", GLib.Variant("(suu)", ("charge", 86400, 300)),
                       None, Gio.DBusCallFlags.NONE, 5000, None, done)
+
+    @Slot(str)
+    def setLanguage(self, lang): self._call("SetLanguage", "s", (lang,))
 
     @Slot(int, int)
     def setKeyboardTimeout(self, ac, battery): self._call("SetKeyboardTimeout", "uu", (ac, battery))
@@ -256,7 +273,7 @@ class Backend(QObject):
             SETTINGS.parent.mkdir(parents=True, exist_ok=True)
             SETTINGS.write_text(json.dumps(self._settings, indent=2))
         except OSError as e:
-            log.warning("не сохранить %s: %s", SETTINGS, e)
+            log.warning(_("не сохранить %s: %s"), SETTINGS, e)
         self.screenAutoChanged.emit()
         if v:
             self._screen_auto_apply()
@@ -269,7 +286,7 @@ class Backend(QObject):
             if len(rates) > 1 and self._last_ac is not None:
                 want = rates[-1] if self._last_ac else rates[0]
                 if info.get("hz") != want:
-                    log.info("экран авто: %s Гц", want)
+                    log.info(_("экран авто: %s Гц"), want)
                     self.setRefreshRate(want)
         display.query(got)
 

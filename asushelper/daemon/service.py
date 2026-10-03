@@ -18,6 +18,7 @@ from . import idle
 from . import slash
 from .config import Config
 from .modes import Modes
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +76,8 @@ XML = f"""
     </method>
     <!-- датчики за последний час (раз в 5 с) и здоровье батареи по дням -->
     <method name="GetHistory"><arg type="s" direction="out" name="json"/></method>
+    <!-- язык интерфейса (ru, en); демон и окно перезапускаются на новом языке -->
+    <method name="SetLanguage"><arg type="s" direction="in" name="lang"/></method>
     <!-- гаснуть без нажатий: секунды от сети и от батареи, 0 — не гаснуть -->
     <method name="SetKeyboardTimeout">
       <arg type="u" direction="in" name="ac"/><arg type="u" direction="in" name="battery"/>
@@ -213,7 +216,7 @@ class Service:
             self.idle.reset()
         self.apply_keyboard()
         self.apply_slash(wake=True)
-        self.modes.reapply("выход из сна")
+        self.modes.reapply(_("выход из сна"))
         self._auto_eco()
 
     def power_source_changed(self, ac: bool) -> None:
@@ -251,25 +254,25 @@ class Service:
         want_off = not self.modes.ac
         if not want_off:
             if gpu.bios_off():
-                log.info("«Авто»: сеть → включаю NVIDIA")
+                log.info(_("«Авто»: сеть → включаю NVIDIA"))
                 self.gpu.start(False)
                 self._changed()
             return self._auto_changed(waiting_before)
         if gpu.bios_off():
             return self._auto_changed(waiting_before)
         if gpu.external_displays():
-            log.info("«Авто»: к NVIDIA подключён монитор — не выключаю")
+            log.info(_("«Авто»: к NVIDIA подключён монитор — не выключаю"))
             return self._auto_changed(waiting_before)
         busy = sorted({c for _, c in gpu.holders()})
         if busy:
             # не ломаем работу программ: выключим, когда освободится
             if busy != waiting_before:
-                log.info("«Авто»: батарея, но NVIDIA занята (%s) — жду", ", ".join(busy))
+                log.info(_("«Авто»: батарея, но NVIDIA занята (%s) — жду"), ", ".join(busy))
             self.auto_waiting = busy
             if not self._auto_timer:
                 self._auto_timer = GLib.timeout_add_seconds(self.AUTO_RECHECK_S, self._auto_recheck)
             return self._auto_changed(waiting_before)
-        log.info("«Авто»: батарея → Eco")
+        log.info(_("«Авто»: батарея → Eco"))
         self.gpu.start(True)
         self._changed()
         return False
@@ -351,7 +354,7 @@ class Service:
         else:
             authorize(self.bus, sender, POLKIT_ACTION,
                       lambda ok: self._dispatch(method, args, invocation) if ok
-                      else invocation.return_dbus_error(ERROR + ".NotAuthorized", "нет прав (polkit)"))
+                      else invocation.return_dbus_error(ERROR + ".NotAuthorized", _("нет прав (polkit)")))
 
     def _dispatch(self, method, args, invocation):
         try:
@@ -361,7 +364,7 @@ class Service:
             return
         except Exception as e:  # демон не должен падать из-за одного неудачного вызова
             log.exception("%s%s", method, args)
-            invocation.return_dbus_error(ERROR + ".Failed", f"внутренняя ошибка: {e}")
+            invocation.return_dbus_error(ERROR + ".Failed", _("внутренняя ошибка: {0}").format(e))
             return
         invocation.return_value(None if result is None else GLib.Variant("(s)", (result,)))
 
@@ -386,9 +389,9 @@ class Service:
 
     def do_SetChargeLimit(self, percent):
         if not 20 <= percent <= 100:
-            raise Failed("лимит заряда — от 20 до 100 %")
+            raise Failed(_("лимит заряда — от 20 до 100 %"))
         if not hw.set_charge_limit(percent):
-            raise Failed("ядро не приняло лимит заряда")
+            raise Failed(_("ядро не приняло лимит заряда"))
         self.config.data["charge_limit"] = percent
         self.config.save()
         self._changed()
@@ -396,7 +399,7 @@ class Service:
     def do_SetEpp(self, profile, epp):
         check_profile(profile)
         if epp and epp not in hw.epp_choices():
-            raise Failed(f"EPP «{epp}» не поддерживается: {' '.join(hw.epp_choices())}")
+            raise Failed(_("EPP «{0}» не поддерживается: {1}").format(epp, ' '.join(hw.epp_choices())))
         self.config.profile(profile)["epp"] = epp or None
         self._save_and_reapply(profile)
 
@@ -417,20 +420,20 @@ class Service:
     def do_GetFactoryFanCurves(self):
         """Заводские кривые BIOS для текущего режима — чтобы приложение показало их как отправную точку."""
         if not hw.has_fan_curves():
-            raise Failed("ядро не поддерживает свои кривые вентиляторов")
+            raise Failed(_("ядро не поддерживает свои кривые вентиляторов"))
         curves = {f: hw.factory_fan_curve(f) for f in hw.curve_fans()}
         cache = self.config.data.setdefault("factory_curves", {}).setdefault(self.modes.current, {})
         cache.update({f: {"temp": c["temp"], "pwm": c["pwm"]} for f, c in curves.items() if c})
         self.config.save()
-        self.modes.reapply("после чтения заводских кривых")   # вернуть свои кривые, если были
+        self.modes.reapply(_("после чтения заводских кривых"))   # вернуть свои кривые, если были
         return json.dumps({"profile": self.modes.current, "curves": curves})
 
     def do_SetPowerLimit(self, profile, attr, value):
         check_profile(profile)
         if attr not in hw.POWER_ATTRS:
-            raise Failed(f"неизвестный параметр «{attr}»")
+            raise Failed(_("неизвестный параметр «{0}»").format(attr))
         if hw.armoury_attr(attr) is None:
-            raise Failed(f"параметра «{attr}» нет на этом ноутбуке")
+            raise Failed(_("параметра «{0}» нет на этом ноутбуке").format(attr))
         limits = self.config.profile(profile)["power_limits"]
         if value < 0:
             limits.pop(attr, None)     # -1 — вернуть управление BIOS
@@ -454,13 +457,13 @@ class Service:
     def do_SetGpuModeFlags(self, mode, flags):
         force, ignore_displays = bool(flags & 1), bool(flags & 2)
         if not gpu.supported():
-            raise Failed("на этом ноутбуке нельзя выключать видеокарту через BIOS")
+            raise Failed(_("на этом ноутбуке нельзя выключать видеокарту через BIOS"))
         if mode not in ("eco", "standard"):
-            raise Failed("режим видеокарты: eco или standard")
+            raise Failed(_("режим видеокарты: eco или standard"))
         if self.gpu.busy:
-            raise Failed("видеокарта уже переключается")
+            raise Failed(_("видеокарта уже переключается"))
         if mode == "eco" and not gpu.mux_hybrid():
-            raise Failed("MUX в режиме «только NVIDIA» — выключать её нельзя")
+            raise Failed(_("MUX в режиме «только NVIDIA» — выключать её нельзя"))
         if self.config.data["gpu"]["auto_eco"]:
             # ручной выбор отменяет «Оптимальный», иначе при смене питания карта переключится сама
             self.config.data["gpu"]["auto_eco"] = False
@@ -476,45 +479,59 @@ class Service:
 
     def do_SetToggle(self, attr, enabled):
         if attr not in hw.TOGGLE_ATTRS or hw.armoury_attr(attr) is None:
-            raise Failed(f"переключателя «{attr}» нет")
+            raise Failed(_("переключателя «{0}» нет").format(attr))
         from . import sysfs
         if not sysfs.write(f"{hw.ARMOURY}/{attr}/current_value", 1 if enabled else 0):
-            raise Failed("BIOS не принял значение")
+            raise Failed(_("BIOS не принял значение"))
         self._changed()
 
     def do_SetCpuBoost(self, profile, enabled):
         check_profile(profile)
         if hw.turbo() is None:
-            raise Failed("Turbo Boost не управляется (нет intel_pstate)")
+            raise Failed(_("Turbo Boost не управляется (нет intel_pstate)"))
         self.config.profile(profile)["cpu_boost"] = bool(enabled)
         self._save_and_reapply(profile)
 
     def do_SetSlash(self, mode, brightness, interval):
         if not slash.supported():
-            raise Failed("полоса Slash не найдена")
+            raise Failed(_("полоса Slash не найдена"))
         if mode not in slash.MODES:
-            raise Failed(f"анимация: {', '.join(slash.MODES)}")
+            raise Failed(_("анимация: {0}").format(', '.join(slash.MODES)))
         if brightness > 3 or interval > 5:
-            raise Failed("яркость 0–3, пауза 0–5")
+            raise Failed(_("яркость 0–3, пауза 0–5"))
         self.config.data["slash"].update(mode=mode, brightness=int(brightness), interval=int(interval))
         if not self.apply_slash():
-            raise Failed("Slash не ответила (журнал демона)")
+            raise Failed(_("Slash не ответила (журнал демона)"))
         self.config.save()
         self._changed()
 
     def do_SetSlashOptions(self, on_battery, lid_closed):
         self.config.data["slash"].update(on_battery=bool(on_battery), lid_closed=bool(lid_closed))
         if not self.apply_slash():
-            raise Failed("Slash не ответила (журнал демона)")
+            raise Failed(_("Slash не ответила (журнал демона)"))
         self.config.save()
         self._changed()
 
     def do_GetHistory(self):
         return json.dumps(self.history.dump())
 
+    def do_SetLanguage(self, lang):
+        from .. import i18n
+        if lang not in i18n.LANGUAGES:
+            raise Failed(_("язык: {0}").format(", ".join(i18n.LANGUAGES)))
+        self.config.data["language"] = lang
+        self.config.save()
+        self._changed()
+        if lang != i18n.LANG:
+            # перезапуск на новом языке, когда ответ клиенту уже ушёл (systemd видит тот же процесс)
+            import os
+            import sys
+            log.info(_("язык → %s, перезапускаю демон"), lang)
+            GLib.timeout_add(500, lambda: os.execv(sys.executable, [sys.executable, "-m", "asushelper.daemon", *sys.argv[1:]]))
+
     def do_SetKeyboardTimeout(self, ac, battery):
         if ac > 3600 or battery > 3600:
-            raise Failed("не больше часа (3600 с)")
+            raise Failed(_("не больше часа (3600 с)"))
         self.config.data["keyboard"].update(timeout_ac=int(ac), timeout_battery=int(battery))
         self.config.save()
         if self.idle:
@@ -523,16 +540,16 @@ class Service:
 
     def do_SetKeyboardBrightness(self, level):
         if not aura.set_brightness(level):
-            raise Failed("подсветка клавиатуры не найдена")
+            raise Failed(_("подсветка клавиатуры не найдена"))
         self.config.data["keyboard"]["brightness"] = (aura.brightness() or {}).get("value", level)
         self.config.save()
         self._changed()
 
     def do_SetAura(self, mode, color, color2, speed):
         if mode not in aura.MODES:
-            raise Failed(f"эффект: {', '.join(aura.MODES)}")
+            raise Failed(_("эффект: {0}").format(', '.join(aura.MODES)))
         if speed not in aura.SPEEDS:
-            raise Failed(f"скорость: {', '.join(aura.SPEEDS)}")
+            raise Failed(_("скорость: {0}").format(', '.join(aura.SPEEDS)))
         try:
             aura.parse_color(color)
             aura.parse_color(color2 or "#000000")
@@ -541,7 +558,7 @@ class Service:
         k = self.config.data["keyboard"]
         k.update(mode=mode, color=color.upper(), color2=(color2 or "#000000").upper(), speed=speed)
         if not aura.apply(k):
-            raise Failed("клавиатура Aura не ответила (журнал демона)")
+            raise Failed(_("клавиатура Aura не ответила (журнал демона)"))
         self.config.save()
         self._changed()
 
@@ -549,14 +566,14 @@ class Service:
         k = self.config.data["keyboard"]
         k.update(awake=awake, boot=boot, sleep=sleep, shutdown=shutdown)
         if not aura.apply(k):
-            raise Failed("клавиатура Aura не ответила (журнал демона)")
+            raise Failed(_("клавиатура Aura не ответила (журнал демона)"))
         self.config.save()
         self._changed()
 
     def _save_and_reapply(self, profile):
         self.config.save()
         if profile == self.modes.current:
-            self.modes.reapply(f"изменены настройки режима {profile}")
+            self.modes.reapply(_("изменены настройки режима {0}").format(profile))
         else:
             self._changed()
 
@@ -568,12 +585,12 @@ def sysfs_path(p: str) -> str:
 
 def check_profile(p):
     if p not in PROFILES:
-        raise Failed(f"неизвестный режим «{p}» (есть: {', '.join(PROFILES)})")
+        raise Failed(_("неизвестный режим «{0}» (есть: {1})").format(p, ', '.join(PROFILES)))
 
 
 def check_fan(f):
     if f not in hw.curve_fans():
-        raise Failed(f"неизвестный вентилятор «{f}» (есть: {', '.join(hw.curve_fans())})")
+        raise Failed(_("неизвестный вентилятор «{0}» (есть: {1})").format(f, ', '.join(hw.curve_fans())))
 
 
 def authorize(bus: Gio.DBusConnection, sender: str, action: str, done) -> None:
@@ -587,7 +604,7 @@ def authorize(bus: Gio.DBusConnection, sender: str, action: str, done) -> None:
         try:
             ok = conn.call_finish(res).unpack()[0][0]
         except GLib.Error as e:
-            log.warning("polkit недоступен: %s", e.message)
+            log.warning(_("polkit недоступен: %s"), e.message)
             ok = False
         done(ok)
 

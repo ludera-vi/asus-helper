@@ -16,6 +16,7 @@ import logging
 import os
 
 from . import hid, sysfs
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -23,23 +24,23 @@ LONG_MODELS = ("GA405", "GU405", "GU606", "GX651")
 
 # id → (код анимации, название)
 MODES = {
-    "bounce": (0x10, "Отскок"),
-    "slash": (0x12, "Слэш"),
-    "loading": (0x13, "Загрузка"),
-    "bitstream": (0x1D, "Поток битов"),
-    "transmission": (0x1A, "Передача"),
-    "flow": (0x19, "Течение"),
-    "flux": (0x25, "Флюкс"),
-    "phantom": (0x24, "Фантом"),
-    "spectrum": (0x26, "Спектр"),
-    "hazard": (0x32, "Опасность"),
-    "interfacing": (0x33, "Связь"),
-    "ramp": (0x34, "Нарастание"),
+    "bounce": (0x10, _("Отскок")),
+    "slash": (0x12, _("Слэш")),
+    "loading": (0x13, _("Загрузка")),
+    "bitstream": (0x1D, _("Поток битов")),
+    "transmission": (0x1A, _("Передача")),
+    "flow": (0x19, _("Течение")),
+    "flux": (0x25, _("Флюкс")),
+    "phantom": (0x24, _("Фантом")),
+    "spectrum": (0x26, _("Спектр")),
+    "hazard": (0x32, _("Опасность")),
+    "interfacing": (0x33, _("Связь")),
+    "ramp": (0x34, _("Нарастание")),
     "gameover": (0x42, "Game Over"),
-    "start": (0x43, "Старт"),
-    "buzzer": (0x44, "Зуммер"),
-    "static": (0x06, "Ровный"),
-    "battery": (None, "Заряд батареи"),   # рисует сам демон: горит доля полосы по заряду
+    "start": (0x43, _("Старт")),
+    "buzzer": (0x44, _("Зуммер")),
+    "static": (0x06, _("Ровный")),
+    "battery": (None, _("Заряд батареи")),   # рисует сам демон: горит доля полосы по заряду
 }
 
 
@@ -73,7 +74,7 @@ class Device:
     def __enter__(self):
         found = find_device()
         if found is None:
-            raise OSError("полоса Slash не найдена")
+            raise OSError(_("полоса Slash не найдена"))
         dev, self.report, self.length = found
         self.fd = os.open(sysfs.path(dev), os.O_RDWR)
         return self

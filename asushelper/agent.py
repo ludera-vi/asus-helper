@@ -16,11 +16,12 @@ gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 
 from . import BUS_NAME, INTERFACE, OBJECT_PATH
+from .i18n import _
 
 log = logging.getLogger("asus-helper-agent")
 
 PPD_NAMES = {"quiet": "power-saver", "balanced": "balanced", "performance": "performance"}
-GPU_TEXT = {"off": "NVIDIA выключена (Eco)", "suspended": "NVIDIA включена", "active": "NVIDIA включена"}
+GPU_TEXT = {"off": _("NVIDIA выключена (Eco)"), "suspended": _("NVIDIA включена"), "active": _("NVIDIA включена")}
 
 
 class Agent:
@@ -40,7 +41,7 @@ class Agent:
                                  Gio.DBusCallFlags.NO_AUTO_START, 2000, None)
             self.profile = r.unpack()[0]
         except GLib.Error:
-            log.info("демон пока не запущен — жду его сигналов")
+            log.info(_("демон пока не запущен — жду его сигналов"))
 
     def osd(self, method: str, sig: str, value) -> None:
         self.session.call("org.kde.plasmashell", "/org/kde/osdService", "org.kde.osdService", method,
@@ -52,7 +53,7 @@ class Agent:
             try:
                 self.notification_id = conn.call_finish(res).unpack()[0]
             except GLib.Error as e:
-                log.warning("уведомление: %s", e.message)
+                log.warning(_("уведомление: %s"), e.message)
         # replaces_id — новое уведомление заменяет прошлое, а не копится
         self.session.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                           "org.freedesktop.Notifications", "Notify",
@@ -76,9 +77,9 @@ class Agent:
     def on_gpu(self, *args):
         state, error = args[5].unpack()
         if error:
-            self.notify("Видеокарта не переключилась", error, "dialog-warning")
+            self.notify(_("Видеокарта не переключилась"), error, "dialog-warning")
         else:
-            self.notify("Видеокарта", GPU_TEXT.get(state, f"NVIDIA: {state}"))
+            self.notify(_("Видеокарта"), GPU_TEXT.get(state, f"NVIDIA: {state}"))
 
 
 def main() -> int:

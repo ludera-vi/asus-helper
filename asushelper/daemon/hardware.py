@@ -7,6 +7,7 @@ import logging
 
 from .. import FANS
 from . import sysfs
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def epp_choices() -> list[str]:
 
 def set_epp(value: str) -> bool:
     if value not in epp_choices():
-        log.warning("EPP «%s» не поддерживается (есть: %s)", value, epp_choices())
+        log.warning(_("EPP «%s» не поддерживается (есть: %s)"), value, epp_choices())
         return False
     return all([sysfs.write(p, value) for p in sysfs.find(EPP_GLOB)])
 
@@ -124,7 +125,7 @@ def set_armoury(name: str, value: int) -> bool:
     if a["max"] is not None:
         v = min(v, a["max"])
     if v != value:
-        log.info("%s: %s ограничено до %s (допустимо %s–%s)", name, value, v, a["min"], a["max"])
+        log.info(_("%s: %s ограничено до %s (допустимо %s–%s)"), name, value, v, a["min"], a["max"])
     if v == a["value"]:
         return True
     return sysfs.write(f"{ARMOURY}/{name}/current_value", v)
@@ -174,15 +175,15 @@ def fan_curve(fan: str) -> dict | None:
 def validate_curve(temp: list[int], pwm: list[int]) -> str | None:
     """Текст ошибки или None. BIOS требует неубывающие температуры и обороты."""
     if len(temp) != CURVE_POINTS or len(pwm) != CURVE_POINTS:
-        return f"нужно ровно {CURVE_POINTS} точек"
+        return _("нужно ровно {0} точек").format(CURVE_POINTS)
     if any(not 0 <= t <= 120 for t in temp):
-        return "температура должна быть от 0 до 120 °C"
+        return _("температура должна быть от 0 до 120 °C")
     if any(not 0 <= p <= 255 for p in pwm):
-        return "обороты (pwm) должны быть от 0 до 255"
+        return _("обороты (pwm) должны быть от 0 до 255")
     if any(b < a for a, b in zip(temp, temp[1:])):
-        return "температуры точек должны не убывать"
+        return _("температуры точек должны не убывать")
     if any(b < a for a, b in zip(pwm, pwm[1:])):
-        return "обороты точек должны не убывать"
+        return _("обороты точек должны не убывать")
     return None
 
 
@@ -192,7 +193,7 @@ def set_fan_curve(fan: str, temp: list[int], pwm: list[int]) -> bool:
     if d is None:
         return False
     if err := validate_curve(temp, pwm):
-        log.warning("кривая %s отклонена: %s", fan, err)
+        log.warning(_("кривая %s отклонена: %s"), fan, err)
         return False
     i = FAN_INDEX[fan]
     ok = True

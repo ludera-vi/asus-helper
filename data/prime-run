@@ -1,13 +1,20 @@
 #!/bin/bash
-# prime-run из Asus-helper — запуск программы на NVIDIA.
+# prime-run from Asus-helper — run a program on NVIDIA (запуск программы на NVIDIA).
 # Снимает «по умолчанию встроенная видеокарта» из ~/.config/environment.d/91-igpu-apps.conf.
 # Если NVIDIA выключена (Eco), программа запустится на встроенной видеокарте и будет предупреждение.
 
 dgpu=/sys/class/firmware-attributes/asus-armoury/attributes/dgpu_disable/current_value
 [ -e $dgpu ] || dgpu=/sys/devices/platform/asus-nb-wmi/dgpu_disable
 
+lang=$(grep -o '"language": *"[a-z]*"' /etc/asus-helper/config.json 2>/dev/null | grep -o '[a-z]*"$' | tr -d '"')
+[ -n "$lang" ] || case "${LANG:-}" in ru*) lang=ru ;; *) lang=en ;; esac
+
 if [ "$(cat $dgpu 2>/dev/null)" = 1 ]; then
-    msg="NVIDIA выключена (Eco) — «$(basename "${1:-программа}")» запущена на встроенной видеокарте. Включить: Asus-helper → Видеокарта → Стандарт"
+    if [ "$lang" = ru ]; then
+        msg="NVIDIA выключена (Eco) — «$(basename "${1:-программа}")» запущена на встроенной видеокарте. Включить: Asus-helper → Видеокарта → Стандарт"
+    else
+        msg="NVIDIA is off (Eco) — \"$(basename "${1:-program}")\" runs on the integrated GPU. Turn it on: Asus-helper → GPU → Standard"
+    fi
     echo "$msg" >&2
     command -v notify-send >/dev/null && notify-send -a Asus-helper -i asus-helper NVIDIA "$msg"
     exec "$@"

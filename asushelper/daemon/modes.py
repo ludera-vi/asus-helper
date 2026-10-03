@@ -17,6 +17,7 @@ from .. import PROFILES
 from . import hardware as hw
 from . import sysfs
 from .config import Config
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class Modes:
     def set_profile(self, name: str, remember: bool = True) -> None:
         """Включить режим вручную (из приложения, CLI или KDE). Запоминается для текущего питания."""
         if name not in PROFILES:
-            raise ValueError(f"неизвестный режим «{name}»")
+            raise ValueError(_("неизвестный режим «{0}»").format(name))
         if remember:
             self.config.remember_profile(self.ac, name)
             self.config.save()
@@ -55,14 +56,14 @@ class Modes:
 
     def reapply(self, reason: str) -> None:
         """Применить текущий режим заново (после сна, после изменения настроек режима)."""
-        log.info("применяю режим заново: %s", reason)
+        log.info(_("применяю режим заново: %s"), reason)
         self._apply(hw.profile() or "balanced", write_profile=False)
 
     def power_source_changed(self, ac: bool) -> None:
         if ac == self.ac:
             return
         self.ac = ac
-        log.info("питание: %s", "сеть" if ac else "батарея")
+        log.info(_("питание: %s"), _("сеть") if ac else _("батарея"))
         self._nvidia_powerd(ac)
         if self.config.data["auto_profile"]:
             self._apply(self.config.profile_for(ac), write_profile=True)
@@ -73,7 +74,7 @@ class Modes:
 
     def startup(self) -> None:
         name = self.config.profile_for(self.ac) if self.config.data["auto_profile"] else (hw.profile() or "balanced")
-        log.info("старт: питание %s, режим %s", "сеть" if self.ac else "батарея", name)
+        log.info(_("старт: питание %s, режим %s"), _("сеть") if self.ac else _("батарея"), name)
         self._nvidia_powerd(self.ac)
         self._apply(name, write_profile=True)
 
@@ -81,7 +82,7 @@ class Modes:
     def _apply(self, name: str, write_profile: bool) -> None:
         self._cancel_timers()
         if write_profile and hw.profile() != name:
-            log.info("режим → %s", name)
+            log.info(_("режим → %s"), name)
             self._expected = name
             if not hw.set_profile(name):
                 self._expected = None
@@ -115,11 +116,11 @@ class Modes:
             elif fan not in curves and (hw.fan_curve(fan) or {}).get("enabled"):
                 hw.set_fan_curve_mode(fan, hw.CURVE_BIOS)
         if learned:
-            log.info("%s: запомнены заводские кривые %s", name, ", ".join(factory))
+            log.info(_("%s: запомнены заводские кривые %s"), name, ", ".join(factory))
             self.config.save()
         for fan, c in curves.items():
             hw.set_fan_curve(fan, c["temp"], c["pwm"])
-        log.info("%s: кривые вентиляторов применены", name)
+        log.info(_("%s: кривые вентиляторов применены"), name)
 
     def _apply_power(self, name: str) -> None:
         self._nvidia_powerd(self.ac)
@@ -150,7 +151,7 @@ class Modes:
         try:
             self._profile_fd = os.open(sysfs.path(hw.PROFILE), os.O_RDONLY)
         except OSError as e:
-            log.error("не могу следить за %s: %s", hw.PROFILE, e)
+            log.error(_("не могу следить за %s: %s"), hw.PROFILE, e)
             return
         os.read(self._profile_fd, 64)
         GLib.io_add_watch(self._profile_fd, GLib.PRIORITY_DEFAULT,
@@ -164,7 +165,7 @@ class Modes:
             return True
         if name == self.current or name not in PROFILES:
             return True
-        log.info("режим сменился снаружи (Fn+F5?): %s", name)
+        log.info(_("режим сменился снаружи (Fn+F5?): %s"), name)
         self.current = name
         self._cancel_timers()   # не применять настройки прошлого режима
         self.on_change()        # приложение сразу показывает новый режим
@@ -194,6 +195,6 @@ class Modes:
         want = ac and not dgpu_off and self.current == "performance"
         running = subprocess.run(["systemctl", "is-active", "-q", "nvidia-powerd"]).returncode == 0
         if want != running:
-            log.info("nvidia-powerd: %s", "запускаю (Турбо от сети)" if want else "останавливаю — NVIDIA сможет уснуть")
+            log.info("nvidia-powerd: %s", _("запускаю (Турбо от сети)") if want else _("останавливаю — NVIDIA сможет уснуть"))
             subprocess.run(["systemctl", "reset-failed", "nvidia-powerd"], capture_output=True)
             subprocess.Popen(["systemctl", "--no-block", "start" if want else "stop", "nvidia-powerd"])

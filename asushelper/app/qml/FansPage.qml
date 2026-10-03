@@ -18,16 +18,16 @@ ColumnLayout {
     property var factory: ({})
 
     readonly property var powerNames: ({
-        ppt_pl1_spl: ["Процессор, долго", "PL1 — сколько CPU берёт под длительной нагрузкой", " Вт"],
-        ppt_pl2_sppt: ["Процессор, рывком", "PL2 — короткий разгон на несколько секунд", " Вт"],
-        ppt_fppt: ["Процессор, пик", "fPPT — самые короткие всплески", " Вт"],
-        ppt_pl3_fppt: ["Процессор, пик", "PL3/fPPT — самые короткие всплески", " Вт"],
-        ppt_apu_sppt: ["Процессор (APU), рывком", "sPPT встроенного графического ядра AMD", " Вт"],
-        ppt_platform_sppt: ["Вся платформа, рывком", "общий лимит процессора и видеокарты", " Вт"],
-        nv_base_tgp: ["NVIDIA, базовая мощность", "базовый TGP видеокарты", " Вт"],
-        nv_dynamic_boost: ["NVIDIA Dynamic Boost", "сколько ватт CPU может отдать видеокарте", " Вт"],
-        nv_temp_target: ["NVIDIA, предел температуры", "выше — карта замедляется", " °C"],
-        nv_tgp: ["NVIDIA TGP", "мощность видеокарты", " Вт"],
+        ppt_pl1_spl: [Theme.tr("Процессор, долго"), Theme.tr("PL1 — сколько CPU берёт под длительной нагрузкой"), Theme.tr(" Вт")],
+        ppt_pl2_sppt: [Theme.tr("Процессор, рывком"), Theme.tr("PL2 — короткий разгон на несколько секунд"), Theme.tr(" Вт")],
+        ppt_fppt: [Theme.tr("Процессор, пик"), Theme.tr("fPPT — самые короткие всплески"), Theme.tr(" Вт")],
+        ppt_pl3_fppt: [Theme.tr("Процессор, пик"), Theme.tr("PL3/fPPT — самые короткие всплески"), Theme.tr(" Вт")],
+        ppt_apu_sppt: [Theme.tr("Процессор (APU), рывком"), Theme.tr("sPPT встроенного графического ядра AMD"), Theme.tr(" Вт")],
+        ppt_platform_sppt: [Theme.tr("Вся платформа, рывком"), Theme.tr("общий лимит процессора и видеокарты"), Theme.tr(" Вт")],
+        nv_base_tgp: [Theme.tr("NVIDIA, базовая мощность"), Theme.tr("базовый TGP видеокарты"), Theme.tr(" Вт")],
+        nv_dynamic_boost: ["NVIDIA Dynamic Boost", Theme.tr("сколько ватт CPU может отдать видеокарте"), Theme.tr(" Вт")],
+        nv_temp_target: [Theme.tr("NVIDIA, предел температуры"), Theme.tr("выше — карта замедляется"), " °C"],
+        nv_tgp: ["NVIDIA TGP", Theme.tr("мощность видеокарты"), Theme.tr(" Вт")],
     })
 
     spacing: Kirigami.Units.largeSpacing
@@ -46,13 +46,13 @@ ColumnLayout {
         Layout.fillWidth: true
         QQC2.ToolButton {
             icon.name: "go-previous"
-            text: "Назад"
+            text: Theme.tr("Назад")
             display: QQC2.AbstractButton.IconOnly
             onClicked: page.back()
             QQC2.ToolTip.visible: hovered
             QQC2.ToolTip.text: text
         }
-        Kirigami.Heading { level: 3; text: "Вентиляторы и мощность"; Layout.fillWidth: true }
+        Kirigami.Heading { level: 3; text: Theme.tr("Вентиляторы и мощность"); Layout.fillWidth: true }
     }
 
     // ---------- выбор режима ----------
@@ -63,7 +63,7 @@ ColumnLayout {
             Tile {
                 required property var modelData
                 text: modelData.name
-                subtitle: page.st.profile === modelData.id ? "сейчас" : ""
+                subtitle: page.st.profile === modelData.id ? Theme.tr("сейчас") : ""
                 iconName: modelData.icon
                 accent: Theme.profileColor(modelData.id)
                 selected: page.profile === modelData.id
@@ -77,14 +77,14 @@ ColumnLayout {
         wrapMode: Text.Wrap
         font: Kirigami.Theme.smallFont
         opacity: 0.7
-        text: "Настройки сохранятся и включатся, когда будет включён режим «" + Theme.profileName(page.profile) + "»"
+        text: Theme.tr("Настройки сохранятся и включатся, когда будет включён режим «%1»").arg(Theme.profileName(page.profile))
     }
 
     // ---------- кривые ----------
     Repeater {
         // вентиляторы, которым этот ноутбук позволяет задать кривую
         model: Object.keys(page.st.fan_curves || {}).map(f => ({
-            fan: f, name: ({ cpu: "Вентилятор процессора", gpu: "Вентилятор видеокарты", mid: "Средний вентилятор" })[f] || f }))
+            fan: f, name: ({ cpu: Theme.tr("Вентилятор процессора"), gpu: Theme.tr("Вентилятор видеокарты"), mid: Theme.tr("Средний вентилятор") })[f] || f }))
         delegate: Section {
             id: fanSection
             required property var modelData
@@ -97,12 +97,12 @@ ColumnLayout {
 
             title: modelData.name
             iconName: "temperature-normal-symbolic"
-            info: page.isCurrent && rpm ? rpm + " об/мин" : ""
+            info: page.isCurrent && rpm ? rpm + Theme.tr(" об/мин") : ""
 
 
             QQC2.Switch {
                 id: custom
-                text: "Своя кривая"
+                text: Theme.tr("Своя кривая")
                 checked: fanSection.saved !== null
                 // начинать свою кривую можно только с известной (своей или заводской)
                 enabled: fanSection.saved !== null || fanSection.factoryCurve !== null
@@ -111,7 +111,7 @@ ColumnLayout {
                     else fanSection.dirty = true
                 }
                 QQC2.ToolTip.visible: hovered
-                QQC2.ToolTip.text: "Выключено — вентилятором управляет BIOS по своей заводской кривой"
+                QQC2.ToolTip.text: Theme.tr("Выключено — вентилятором управляет BIOS по своей заводской кривой")
             }
 
             QQC2.Label {
@@ -119,8 +119,8 @@ ColumnLayout {
                 visible: !editor.known
                 wrapMode: Text.Wrap
                 opacity: 0.7
-                text: "Заводская кривая режима «" + Theme.profileName(page.profile) + "» ещё неизвестна — "
-                      + "она появится, когда этот режим хотя бы раз будет включён"
+                text: Theme.tr("Заводская кривая режима «%1» ещё неизвестна — ").arg(Theme.profileName(page.profile))
+                      + Theme.tr("она появится, когда этот режим хотя бы раз будет включён")
             }
 
             FanCurve {
@@ -159,17 +159,17 @@ ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true
                 QQC2.Button {
-                    text: "Заводская"
+                    text: Theme.tr("Заводская")
                     icon.name: "edit-undo"
                     enabled: page.isCurrent
                     onClicked: backend.requestFactoryCurves()
                     QQC2.ToolTip.visible: hovered
-                    QQC2.ToolTip.text: page.isCurrent ? "Загрузить кривую BIOS для этого режима как отправную точку"
-                                                      : "BIOS отдаёт заводскую кривую только для включённого режима"
+                    QQC2.ToolTip.text: page.isCurrent ? Theme.tr("Загрузить кривую BIOS для этого режима как отправную точку")
+                                                      : Theme.tr("BIOS отдаёт заводскую кривую только для включённого режима")
                 }
                 Item { Layout.fillWidth: true }
                 QQC2.Button {
-                    text: "Применить"
+                    text: Theme.tr("Применить")
                     icon.name: "dialog-ok-apply"
                     highlighted: fanSection.dirty
                     enabled: fanSection.dirty && custom.checked
@@ -186,9 +186,9 @@ ColumnLayout {
 
     // ---------- мощность ----------
     Section {
-        title: "Мощность"
+        title: Theme.tr("Мощность")
         iconName: "cpu"
-        info: page.st.ac ? "от сети" : "на батарее — пределы ниже"
+        info: page.st.ac ? Theme.tr("от сети") : Theme.tr("на батарее — пределы ниже")
 
         Repeater {
             model: Object.keys(page.st.power_limits || {}).filter(a => {
@@ -239,9 +239,9 @@ ColumnLayout {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
-                QQC2.Label { text: "Turbo Boost процессора" }
+                QQC2.Label { text: Theme.tr("Turbo Boost процессора") }
                 QQC2.Label {
-                    text: "выключен — холоднее и тише, но медленнее в тяжёлых задачах"
+                    text: Theme.tr("выключен — холоднее и тише, но медленнее в тяжёлых задачах")
                     font: Kirigami.Theme.smallFont
                     opacity: 0.6
                 }
@@ -255,18 +255,18 @@ ColumnLayout {
 
         RowLayout {
             Layout.fillWidth: true
-            QQC2.Label { text: "Энергосбережение CPU (EPP)"; Layout.fillWidth: true }
+            QQC2.Label { text: Theme.tr("Энергосбережение CPU (EPP)"); Layout.fillWidth: true }
             QQC2.ComboBox {
                 id: epp
                 readonly property var choices: ["", ...(page.st.epp_choices || []).filter(c => c !== "default")]
-                model: choices.map(c => c === "" ? "по режиму" : c)
+                model: choices.map(c => c === "" ? Theme.tr("по режиму") : c)
                 currentIndex: Math.max(0, choices.indexOf(page.pcfg.epp || ""))
                 onActivated: i => backend.setEpp(page.profile, choices[i])
             }
         }
 
         QQC2.Button {
-            text: "Мощность — как в BIOS"
+            text: Theme.tr("Мощность — как в BIOS")
             icon.name: "edit-undo"
             enabled: Object.keys(page.pcfg.power_limits || {}).length > 0
             onClicked: backend.resetPowerLimits(page.profile)

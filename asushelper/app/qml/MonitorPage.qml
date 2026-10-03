@@ -36,17 +36,17 @@ ColumnLayout {
         Layout.fillWidth: true
         QQC2.ToolButton {
             icon.name: "go-previous"
-            text: "Назад"
+            text: Theme.tr("Назад")
             display: QQC2.AbstractButton.IconOnly
             onClicked: page.back()
         }
-        Kirigami.Heading { level: 3; text: "Датчики и батарея"; Layout.fillWidth: true }
+        Kirigami.Heading { level: 3; text: Theme.tr("Датчики и батарея"); Layout.fillWidth: true }
     }
 
     RowLayout {
         spacing: Kirigami.Units.smallSpacing
         Repeater {
-            model: [{ s: 600, name: "10 мин" }, { s: 1800, name: "30 мин" }, { s: 3600, name: "1 час" }]
+            model: [{ s: 600, name: Theme.tr("10 мин") }, { s: 1800, name: Theme.tr("30 мин") }, { s: 3600, name: Theme.tr("1 час") }]
             Tile {
                 required property var modelData
                 compact: true
@@ -58,9 +58,9 @@ ColumnLayout {
     }
 
     Section {
-        title: "Процессор"
+        title: Theme.tr("Процессор")
         iconName: "temperature-normal-symbolic"
-        info: (backend.state || {}).cpu_temp != null ? Math.round(backend.state.cpu_temp) + " °C сейчас" : ""
+        info: (backend.state || {}).cpu_temp != null ? Math.round(backend.state.cpu_temp) + Theme.tr(" °C сейчас") : ""
         Chart {
             Layout.fillWidth: true
             times: page.t
@@ -72,9 +72,9 @@ ColumnLayout {
     }
 
     Section {
-        title: "Вентиляторы"
+        title: Theme.tr("Вентиляторы")
         iconName: Qt.resolvedUrl("icons/fan-symbolic.svg")
-        info: "процессор  ·  видеокарта"
+        info: Theme.tr("процессор  ·  видеокарта")
         Chart {
             Layout.fillWidth: true
             times: page.t
@@ -86,15 +86,15 @@ ColumnLayout {
     }
 
     Section {
-        title: "Расход от батареи"
+        title: Theme.tr("Расход от батареи")
         iconName: "battery-good-symbolic"
-        info: !isNaN(page.avgDischarge) ? "в среднем " + page.avgDischarge.toFixed(1) + " Вт"
-              : (backend.state || {}).ac ? "от сети" : ""
+        info: !isNaN(page.avgDischarge) ? Theme.tr("в среднем ") + page.avgDischarge.toFixed(1) + Theme.tr(" Вт")
+              : (backend.state || {}).ac ? Theme.tr("от сети") : ""
         Chart {
             Layout.fillWidth: true
             times: page.t
             span: page.span
-            unit: " Вт"
+            unit: Theme.tr(" Вт")
             yMin: 0
             decimals: 0
             series: [{ values: (page.h.battery_w || []).map(w => w === null ? null : Math.max(0, w)),
@@ -103,9 +103,9 @@ ColumnLayout {
     }
 
     Section {
-        title: "Заряд за сутки"
+        title: Theme.tr("Заряд за сутки")
         iconName: "battery-full-symbolic"
-        info: (backend.state || {}).battery ? backend.state.battery.capacity + "% сейчас" : ""
+        info: (backend.state || {}).battery ? backend.state.battery.capacity + Theme.tr("% сейчас") : ""
         Chart {
             Layout.fillWidth: true
             times: (page.h.charge || []).map(p => p[0])
@@ -118,10 +118,10 @@ ColumnLayout {
 
     Section {
         id: healthSection
-        title: "Здоровье батареи"
+        title: Theme.tr("Здоровье батареи")
         iconName: "battery-100-symbolic"
         readonly property var health: page.h.health || []
-        info: health.length ? health[health.length - 1].health + "% от новой" : ""
+        info: health.length ? health[health.length - 1].health + Theme.tr("% от новой") : ""
         QQC2.Label {
             Layout.fillWidth: true
             wrapMode: Text.Wrap
@@ -129,12 +129,12 @@ ColumnLayout {
             opacity: 0.75
             text: {
                 const hs = healthSection.health
-                if (!hs.length) return "Записывается раз в день — появится после первого дня работы демона"
+                if (!hs.length) return Theme.tr("Записывается раз в день — появится после первого дня работы демона")
                 const first = hs[0], last = hs[hs.length - 1]
                 const days = Math.round((new Date(last.date) - new Date(first.date)) / 86400000)
                 return days > 0
-                    ? "С " + first.date + " (" + days + " дн.): " + first.health + "% → " + last.health + "%"
-                    : "Сегодня " + last.health + "% от паспортной ёмкости. Динамика появится через несколько дней"
+                    ? Theme.tr("С ") + first.date + " (" + days + Theme.tr(" дн.): ") + first.health + "% → " + last.health + "%"
+                    : Theme.tr("Сегодня ") + last.health + Theme.tr("% от паспортной ёмкости. Динамика появится через несколько дней")
             }
         }
     }

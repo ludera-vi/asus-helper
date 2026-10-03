@@ -14,6 +14,7 @@ import logging
 import os
 
 from . import hid, sysfs
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def rgb_method() -> str | None:
 def parse_color(s: str) -> tuple[int, int, int]:
     s = s.lstrip("#")
     if len(s) != 6:
-        raise ValueError(f"цвет «{s}»: нужен вид #RRGGBB")
+        raise ValueError(_("цвет «{0}»: нужен вид #RRGGBB").format(s))
     return int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
 
 
@@ -109,14 +110,14 @@ APPLY = bytes([REPORT, 0xB4])
 def send(messages: list[bytes]) -> bool:
     found = find_device()
     if found is None:
-        log.warning("клавиатура Aura (HID ASUS с отчётом 0x5d) не найдена")
+        log.warning(_("клавиатура Aura (HID ASUS с отчётом 0x5d) не найдена"))
         return False
     dev = found["dev"]
     length = found["features"][REPORT] + 1      # + id отчёта
     try:
         fd = os.open(sysfs.path(dev), os.O_RDWR)
     except OSError as e:
-        log.warning("не открыть %s: %s", dev, e)
+        log.warning(_("не открыть %s: %s"), dev, e)
         return False
     try:
         for m in messages:
@@ -128,7 +129,7 @@ def send(messages: list[bytes]) -> bool:
                 fcntl.ioctl(fd, _hidiocsfeature(length), buf)
         return True
     except OSError as e:
-        log.warning("Aura: запись не удалась: %s", e)
+        log.warning(_("Aura: запись не удалась: %s"), e)
         return False
     finally:
         os.close(fd)

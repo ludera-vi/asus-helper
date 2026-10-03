@@ -13,6 +13,7 @@ import time
 from gi.repository import GLib
 
 from . import hardware as hw
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -74,4 +75,4 @@ class History:
                 json.dump(self.health, f)
             os.replace(tmp, HEALTH_FILE)
         except OSError as e:
-            log.warning("не сохранить %s: %s", HEALTH_FILE, e)
+            log.warning(_("не сохранить %s: %s"), HEALTH_FILE, e)

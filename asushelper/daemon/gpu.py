@@ -17,6 +17,7 @@ import threading
 import time
 
 from . import sysfs
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -81,11 +82,11 @@ def igpu_name() -> str:
     """Встроенная видеокарта (та, что ведёт экран при загрузке): Intel или AMD."""
     for d in sysfs.find(PCI + "/*"):
         if (sysfs.read(d + "/class") or "").startswith("0x03") and sysfs.read(d + "/boot_vga") == "1":
-            return VENDORS.get(sysfs.read(d + "/vendor") or "", "встроенная")
+            return VENDORS.get(sysfs.read(d + "/vendor") or "", _("встроенная"))
     for d in sysfs.find(PCI + "/*"):
         if (sysfs.read(d + "/class") or "").startswith("0x03") and sysfs.read(d + "/vendor") != "0x10de":
-            return VENDORS.get(sysfs.read(d + "/vendor") or "", "встроенная")
-    return "встроенная"
+            return VENDORS.get(sysfs.read(d + "/vendor") or "", _("встроенная"))
+    return _("встроенная")
 
 
 def find_gpu() -> str | None:
@@ -174,7 +175,7 @@ class HotkeyGuard:
                 fcntl.ioctl(fd, EVIOCGRAB, 1)
                 self.fds[node] = fd
             except OSError as err:
-                log.info("не захватить %s: %s", node, err)
+                log.info(_("не захватить %s: %s"), node, err)
 
     def release_later(self, delay: float = 2.0) -> None:
         """Событие от BIOS приходит с задержкой, а при включении NVIDIA появляется новый «Video Bus» —
@@ -226,9 +227,9 @@ def fixup() -> bool:
     if not bios_off() or gpu is None:
         return False
     if sysfs.exists(f"{PCI}/{gpu}/driver"):
-        log.info("NVIDIA выключена в BIOS, но драйвер держит карту — не трогаю")
+        log.info(_("NVIDIA выключена в BIOS, но драйвер держит карту — не трогаю"))
         return False
-    log.info("убираю выключенную NVIDIA с шины PCI (иначе выход из сна ждёт её 65 с)")
+    log.info(_("убираю выключенную NVIDIA с шины PCI (иначе выход из сна ждёт её 65 с)"))
     _remove_from_bus(gpu)
     return True
 
@@ -237,12 +238,12 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
     """Eco. GpuError с понятным текстом, если нельзя; при ошибке всё возвращается как было."""
     gpu = find_gpu()
     if gpu and not ignore_displays and (ext := external_displays(gpu)):
-        raise GpuError(f"К NVIDIA подключён монитор ({', '.join(ext)}) — после выключения он погаснет")
+        raise GpuError(_("К NVIDIA подключён монитор ({0}) — после выключения он погаснет").format(', '.join(ext)))
     if bios_off() and (gpu is None or not sysfs.exists(f"{PCI}/{gpu}/driver")):
         fixup()
         return
     if not mux_hybrid():
-        raise GpuError("MUX в режиме «только NVIDIA» — сначала переключите MUX в гибрид и перезагрузитесь")
+        raise GpuError(_("MUX в режиме «только NVIDIA» — сначала переключите MUX в гибрид и перезагрузитесь"))
 
     if gpu:
         busy = holders(gpu)
@@ -251,61 +252,60 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
             protected = sorted({c for p, c in busy if is_protected(p, c)})
             if protected:
                 # закрывать нельзя — это рабочий стол или система
-                raise GpuError(f"NVIDIA держит рабочий стол ({', '.join(protected)}). Он отпустит её после "
-                               f"выхода из сеанса и входа снова — один раз после установки Asus-helper")
+                raise GpuError(_("NVIDIA держит рабочий стол ({0}). Он отпустит её после выхода из сеанса и входа снова — один раз после установки Asus-helper").format(', '.join(protected)))
             if not force:
-                raise GpuError(f"NVIDIA используют: {names}", can_force=True)
-            log.info("закрываю программы на NVIDIA: %s", names)
-            for pid, _ in busy:
+                raise GpuError(_("NVIDIA используют: {0}").format(names), can_force=True)
+            log.info(_("закрываю программы на NVIDIA: %s"), names)
+            for pid, _comm in busy:
                 try:
                     os.kill(pid, signal.SIGTERM)
                 except OSError:
                     pass
             time.sleep(3)
             if busy := holders(gpu):
-                raise GpuError("программы не закрылись: " + ", ".join(sorted({c for _, c in busy})))
+                raise GpuError(_("программы не закрылись: ") + ", ".join(sorted({c for _, c in busy})))
 
-        log.info("останавливаю сервисы NVIDIA")
+        log.info(_("останавливаю сервисы NVIDIA"))
         subprocess.run(["systemctl", "stop", *SERVICES], capture_output=True)
-        log.info("выгружаю драйвер NVIDIA")
+        log.info(_("выгружаю драйвер NVIDIA"))
         if not _run("modprobe", "-r", *MODULES_UNLOAD):
             _load_driver()
             _start_services()
-            raise GpuError("драйвер не выгрузился (что-то ещё использует карту) — всё возвращено как было")
-        log.info("убираю NVIDIA с шины PCI")
+            raise GpuError(_("драйвер не выгрузился (что-то ещё использует карту) — всё возвращено как было"))
+        log.info(_("убираю NVIDIA с шины PCI"))
         _remove_from_bus(gpu)
 
-    log.info("отключаю NVIDIA в BIOS")
+    log.info(_("отключаю NVIDIA в BIOS"))
     if not sysfs.write(_attr("dgpu_disable"), 1):
         sysfs.write("/sys/bus/pci/rescan", 1)
         _load_driver()
         _start_services()
-        raise GpuError("BIOS отказал в отключении — всё возвращено как было")
+        raise GpuError(_("BIOS отказал в отключении — всё возвращено как было"))
     time.sleep(1)
     if find_gpu():
-        raise GpuError("карта всё ещё видна после отключения")
-    log.info("NVIDIA выключена (Eco)")
+        raise GpuError(_("карта всё ещё видна после отключения"))
+    log.info(_("NVIDIA выключена (Eco)"))
 
 
 def turn_on() -> None:
     if not bios_off() and find_gpu():
         return
     fixup()   # «призрак» помешал бы найти карту заново
-    log.info("включаю NVIDIA в BIOS")
+    log.info(_("включаю NVIDIA в BIOS"))
     if not sysfs.write(_attr("dgpu_disable"), 0):
-        raise GpuError("BIOS отказал во включении")
-    for _ in range(10):
+        raise GpuError(_("BIOS отказал во включении"))
+    for _attempt in range(10):
         time.sleep(1)
         sysfs.write("/sys/bus/pci/rescan", 1)
         if find_gpu():
             break
     else:
-        raise GpuError("карта не появилась. Перезагрузите ноутбук — BIOS уже включил её")
-    log.info("загружаю драйвер NVIDIA")
+        raise GpuError(_("карта не появилась. Перезагрузите ноутбук — BIOS уже включил её"))
+    log.info(_("загружаю драйвер NVIDIA"))
     if not _load_driver():
-        raise GpuError("драйвер не загрузился (журнал: journalctl -b -k | grep -i nvidia)")
+        raise GpuError(_("драйвер не загрузился (журнал: journalctl -b -k | grep -i nvidia)"))
     _start_services()
-    log.info("NVIDIA включена (Стандарт)")
+    log.info(_("NVIDIA включена (Стандарт)"))
 
 
 class Switcher:
@@ -350,7 +350,7 @@ class Switcher:
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
-                    raise GpuError("видеокарту уже переключает другая программа (gpu-eco?)")
+                    raise GpuError(_("видеокарту уже переключает другая программа (gpu-eco?)"))
                 guard = None if sysfs.ROOT else HotkeyGuard()
                 try:
                     (turn_off(force, ignore_displays) if want_off else turn_on())
@@ -360,10 +360,10 @@ class Switcher:
         except GpuError as e:
             err = str(e)
             can_force = e.can_force
-            log.warning("видеокарта: %s", err)
+            log.warning(_("видеокарта: %s"), err)
         except Exception as e:
-            err = f"внутренняя ошибка: {e}"
-            log.exception("видеокарта")
+            err = _("внутренняя ошибка: {0}").format(e)
+            log.exception(_("видеокарта"))
 
         def done():
             self.busy = False
@@ -404,9 +404,9 @@ def write_kwin_env() -> None:
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
-            f.write("# Asus-helper: рабочий стол KDE только на встроенной видеокарте (см. gpu.py)\n")
+            f.write(_("# Asus-helper: рабочий стол KDE только на встроенной видеокарте (см. gpu.py)\n"))
             f.write("".join(l + "\n" for l in lines))
     except OSError as e:
-        log.warning("не записать %s: %s", KWIN_ENV, e)
+        log.warning(_("не записать %s: %s"), KWIN_ENV, e)
         return
-    log.info("рабочий стол KDE: %s", "только встроенная видеокарта" if lines else "как обычно (все видеокарты)")
+    log.info(_("рабочий стол KDE: %s"), _("только встроенная видеокарта") if lines else _("как обычно (все видеокарты)"))

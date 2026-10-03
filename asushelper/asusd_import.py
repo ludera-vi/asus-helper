@@ -7,6 +7,7 @@ import glob
 import re
 
 from . import PROFILES
+from .i18n import _
 
 EPP_NAMES = {"Default": "default", "Performance": "performance", "BalancePerformance": "balance_performance",
              "BalancePower": "balance_power", "Power": "power"}
@@ -107,12 +108,12 @@ def import_into(config, asusd_dir: str = "/etc/asusd") -> list[str]:
         for profile, fans in curves.items():
             for fan, c in fans.items():
                 config.profile(profile)["fan_curves"][fan] = c if c["enabled"] else None
-                done.append(f"{profile}: кривая {fan.upper()}" + ("" if c["enabled"] else " (выключена — BIOS)"))
+                done.append(_("{0}: кривая {1}").format(profile, fan.upper()) + ("" if c["enabled"] else _(" (выключена — BIOS)")))
     except FileNotFoundError:
         pass
     for path in sorted(glob.glob(f"{asusd_dir}/aura_*.ron"))[:1]:
         with open(path) as f:
             a = parse_aura(f.read())
         config.data["keyboard"].update(a)
-        done.append("подсветка: " + ", ".join(f"{k} = {v}" for k, v in a.items()))
+        done.append(_("подсветка: ") + ", ".join(f"{k} = {v}" for k, v in a.items()))
     return done

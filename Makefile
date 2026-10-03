@@ -44,6 +44,7 @@ install:
 	install -Dm644 data/asus-helper-autostart.desktop "$(DESTDIR)$(AUTOSTARTDIR)/asus-helper.desktop"
 	install -Dm644 data/icons/asus-helper.svg "$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/asus-helper.svg"
 	install -Dm644 README.md "$(DESTDIR)$(DATADIR)/doc/asus-helper/README.md"
+	install -Dm644 README.ru.md "$(DESTDIR)$(DATADIR)/doc/asus-helper/README.ru.md"
 
 uninstall:
 	rm -rf "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(DATADIR)/doc/asus-helper"

@@ -56,7 +56,7 @@ Item {
     QQC2.Label {
         anchors.centerIn: parent
         visible: chart.empty
-        text: "нет данных"
+        text: Theme.tr("нет данных")
         opacity: 0.5
     }
 
@@ -86,7 +86,7 @@ Item {
             const marks = span >= 86400 ? [86400, 43200, 0] : [span, span / 2, 0]
             for (const ago of marks) {
                 const x = xOf(now - ago)
-                const label = ago === 0 ? "сейчас" : span >= 7200 ? "−" + Math.round(ago / 3600) + " ч" : "−" + Math.round(ago / 60) + " мин"
+                const label = ago === 0 ? Theme.tr("сейчас") : span >= 7200 ? "−" + Math.round(ago / 3600) + Theme.tr(" ч") : "−" + Math.round(ago / 60) + Theme.tr(" мин")
                 ctx.fillText(label, Math.min(Math.max(x, padL + 16), padL + plotW - 16), padT + plotH + 3)
             }
 
@@ -140,7 +140,7 @@ Item {
         text: {
             if (chart.hoverIndex < 0) return ""
             const ago = Math.round((chart.now - chart.times[chart.hoverIndex]) / 60)
-            return (ago ? ago + " мин назад" : "сейчас") + "\n" + chart.series.map(s => {
+            return (ago ? ago + Theme.tr(" мин назад") : Theme.tr("сейчас")) + "\n" + chart.series.map(s => {
                 const v = s.values[chart.hoverIndex]
                 return (s.name ? s.name + ": " : "") + (v === null || v === undefined ? "—" : Number(v).toFixed(chart.decimals) + chart.unit)
             }).join("\n")

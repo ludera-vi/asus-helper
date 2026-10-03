@@ -1,95 +1,91 @@
 # Asus-helper
 
-**Управление ноутбуками ASUS ROG / TUF в Linux — как G-Helper, но для KDE Plasma.**
-Режимы производительности, кривые вентиляторов, лимиты мощности, выключение NVIDIA (Eco) без
-перезагрузки, подсветка клавиатуры Aura и полоса Slash на крышке, батарея — в одном окне у трея.
+**English · [Русский](README.ru.md)**
 
-*ASUS ROG/TUF laptop control for KDE Plasma (G-Helper-like): performance modes, fan curves, power limits,
-NVIDIA Eco without reboot, Aura keyboard and Slash lid lighting, battery charge limit. Russian UI.*
+**ASUS ROG / TUF laptop control on Linux — like G-Helper, made for KDE Plasma.**
+Performance profiles, fan curves, power limits, turning NVIDIA off (Eco) without a reboot, Aura keyboard
+lighting and the Slash lid light bar, battery — in one window next to the tray. English and Russian UI.
 
-Заменяет `asusd` / `asusctl`, `rog-control-center`, `supergfxctl` и `power-profiles-daemon`.
+Replaces `asusd` / `asusctl`, `rog-control-center`, `supergfxctl` and `power-profiles-daemon`.
 
-## Что умеет
+## Features
 
 | | |
 |---|---|
-| **Режим** | Тихий / Баланс / Турбо, Fn+F5, сам по питанию (от сети — Баланс, от батареи — Тихий, можно поменять); KDE видит режим (виджет батареи, карточка при смене) |
-| **Вентиляторы и мощность** | своя кривая CPU/GPU для каждого режима (точки тянутся мышью), заводские кривые BIOS, PL1/PL2, NVIDIA Dynamic Boost и предел температуры, EPP, Turbo Boost |
-| **Видеокарта** | **Eco** — NVIDIA выключена в BIOS без перезагрузки; **Стандарт** — гибрид; **Авто** — от сети включена, без сети выключена (но не пока её занимает игра или DaVinci — дождётся) |
-| **Экран** | Авто (60 Гц на батарее, максимум от сети) / 60 / 240 Гц, Overdrive |
-| **Клавиатура** | яркость (и с клавиш — карточка KDE), эффекты Aura, цвет, скорость, гаснет без нажатий, когда светиться |
-| **Крышка (Slash)** | яркость, 15 анимаций, ровный свет, заряд батареи, светиться на батарее и с закрытой крышкой |
-| **Батарея** | лимит заряда, графики температуры, вентиляторов и расхода, заряд за сутки, здоровье по дням |
-| **Прочее** | клавиша ROG открывает окно, звук при включении, значок в трее: цвет — режим, точка — NVIDIA работает |
+| **Profile** | Quiet / Balanced / Turbo, Fn+F5, by power source (Balanced on AC, Quiet on battery — changeable); KDE sees the profile (battery widget, OSD on change) |
+| **Fans and power** | custom CPU/GPU fan curve per profile (drag the points), BIOS factory curves, PL1/PL2, NVIDIA Dynamic Boost and temperature limit, EPP, Turbo Boost |
+| **GPU** | **Eco** — NVIDIA turned off in BIOS without a reboot; **Standard** — hybrid; **Auto** — on with AC, off on battery (but not while a game or DaVinci uses it — it waits) |
+| **Display** | Auto (60 Hz on battery, max on AC) / 60 / 240 Hz, panel Overdrive |
+| **Keyboard** | brightness (KDE OSD for the keys too), Aura effects, color, speed, turns off when idle, when to light up |
+| **Lid (Slash)** | brightness, 15 animations, static, battery level, light up on battery and with the lid closed |
+| **Battery** | charge limit, charts of temperature, fans and drain, charge over 24 h, health by day |
+| **Other** | the ROG key opens the window, boot sound, tray icon: color — profile, dot — NVIDIA is active |
 
-Списков моделей нет: всё, что есть у ноутбука, определяется по ядру и HID-устройствам, а окно показывает
-только это. Проверено на **ROG Zephyrus G16 GU605MZ** (Core Ultra 9 + RTX 4080). Что нашлось у вашего:
-`asus-helper-cli diag` — пришлите вывод в issue, если что-то не работает.
+There are no model lists: everything the laptop has is detected from the kernel and HID devices, and the
+window shows only that. Tested on **ROG Zephyrus G16 GU605MZ** (Core Ultra 9 + RTX 4080). What was found on
+yours: `asus-helper-cli diag` — please attach its output to an issue if something does not work.
 
-## Требования
+## Requirements
 
-- Ноутбук ASUS (ROG, TUF, Zephyrus, Strix, Flow…), ядро с `asus-wmi` (лучше 6.15+ с `asus-armoury`)
-- KDE Plasma 6 на Wayland; Arch Linux или производные (CachyOS, EndeavourOS, Manjaro)
-- Для Eco: NVIDIA с драйвером `nvidia`/`nvidia-open`, MUX в гибридном режиме
-- **Без** `asusctl`, `power-profiles-daemon`, `supergfxctl`, `envycontrol` — они делают то же самое
+- ASUS laptop (ROG, TUF, Zephyrus, Strix, Flow…), kernel with `asus-wmi` (6.15+ with `asus-armoury` is best)
+- KDE Plasma 6 on Wayland; Arch Linux or derivatives (CachyOS, EndeavourOS, Manjaro)
+- For Eco: NVIDIA with the `nvidia` / `nvidia-open` driver, MUX in hybrid mode
+- **Without** `asusctl`, `power-profiles-daemon`, `supergfxctl`, `envycontrol` — they do the same job
 
-## Установка
+## Installation
 
-**Из AUR:**
-```bash
-yay -S asus-helper            # или paru -S asus-helper
-sudo systemctl enable --now asus-helperd
-```
-Затем выйдите из сеанса и войдите снова — значок появится в трее.
-
-**Вручную (из исходников):**
 ```bash
 git clone https://github.com/ludera-vi/asus-helper
 cd asus-helper
-./install.sh                  # проверит систему, предложит снимок snapper, поставит в /usr/local
-./install.sh --update         # обновить после git pull
-./uninstall.sh                # удалить (настройки /etc/asus-helper остаются; --purge — и их)
+./install.sh                  # checks the system, offers a snapper snapshot, installs into /usr/local
+./install.sh --update         # update after git pull
+./uninstall.sh                # remove (settings in /etc/asus-helper stay; --purge removes them too)
 ```
-Настройки из `/etc/asusd` (кривые, подсветка, режимы) переносятся при первой установке.
+The installer first asks for the language (English / Русский). Settings from `/etc/asusd` (curves,
+lighting, profiles) are imported on the first install.
 
-## Как пользоваться
+An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AUR registration reopens.
 
-- **Значок в трее**: левый клик — окно, правый — быстрое меню (режимы, Eco). Цвет значка — режим
-  (Тихий зелёный, Баланс синий, Турбо красный), фиолетовая точка — NVIDIA работает.
-- **Клавиша ROG** над клавиатурой открывает окно (меняется в «Настройки → Комбинации клавиш»).
-- **Терминал**: `asus-helper-cli` — состояние; `asus-helper-cli --help` — все команды.
-- **Игры на NVIDIA**: в Стандарте программы берут NVIDIA сами; старым играм на OpenGL —
-  `prime-run программа` (в Steam: параметры запуска `prime-run %command%`).
+## Usage
 
-## Как устроено
+- **Tray icon**: left click — window, right click — quick menu (profiles, Eco). Icon color — profile
+  (Quiet green, Balanced blue, Turbo red), purple dot — NVIDIA is active.
+- **ROG key** above the keyboard opens the window (change it in System Settings → Shortcuts).
+- **Terminal**: `asus-helper-cli` — status; `asus-helper-cli --help` — all commands.
+- **Language**: the RU / EN switch at the bottom of the window or `asus-helper-cli language ru`.
+- **Games on NVIDIA**: in Standard programs use NVIDIA by themselves; for old OpenGL games —
+  `prime-run program` (in Steam: launch options `prime-run %command%`).
+
+## How it works
 
 ```
-asus-helperd (root, systemd)   — единственный, кто пишет в sysfs и HID; D-Bus org.asushelper.Daemon
-  ├─ режимы, кривые, лимиты, EPP, Turbo Boost, автоматика сеть/батарея, восстановление после сна
-  ├─ видеокарта: выгрузка драйвера → уборка с шины PCI → dgpu_disable (как Eco в G-Helper)
-  ├─ Aura и Slash по HID (протоколы — из G-Helper), лимит заряда, история датчиков
-  └─ отвечает KDE вместо power-profiles-daemon (виджет батареи, Fn+F5)
-asus-helper (Qt/QML, сеанс)    — значок, окно у трея (layer-shell), карточки KDE, частота экрана
-asus-helper-cli                — то же из терминала
+asus-helperd (root, systemd)   — the only one writing to sysfs and HID; D-Bus org.asushelper.Daemon
+  ├─ profiles, curves, limits, EPP, Turbo Boost, AC/battery automation, restore after sleep
+  ├─ GPU: unload driver → remove from the PCI bus → dgpu_disable (like Eco in G-Helper)
+  ├─ Aura and Slash over HID (protocols from G-Helper), charge limit, sensor history
+  └─ answers KDE in place of power-profiles-daemon (battery widget, Fn+F5)
+asus-helper (Qt/QML, session)  — tray icon, popup window (layer-shell), KDE OSD, display refresh rate
+asus-helper-cli                — the same from a terminal
 ```
 
-Права — через polkit: пользователю за ноутбуком пароль не нужен. Журнал: `journalctl -u asus-helperd -f`.
+Permissions go through polkit: the user at the laptop needs no password. Log: `journalctl -u asus-helperd -f`.
 
-Чтобы NVIDIA выключалась без выхода из сеанса, рабочий стол KDE работает на встроенной видеокарте:
-демон при загрузке пишет `/run/asus-helper/kwin.env`, если есть NVIDIA и MUX в гибриде; служба KWin
-читает его при входе. Без NVIDIA, в режиме «только NVIDIA» или без демона — ничего не меняется.
+To turn NVIDIA off without logging out, the KDE desktop runs on the integrated GPU: at boot the daemon
+writes `/run/asus-helper/kwin.env` if NVIDIA is present and MUX is in hybrid mode; the KWin service reads it at
+login. Without NVIDIA, with MUX in "NVIDIA only" mode or without the daemon nothing changes.
 
-## Разработка
+## Development
 
 ```bash
-make test                          # тесты на поддельном sysfs, железо не трогают
-sudo ./dev-run.sh                  # демон из исходников в терминале
-python3 -m asushelper.app --show   # окно из исходников
-python3 -m tests.hw_check --gpu    # полная проверка всех функций на живом ноутбуке
+make test                          # tests on a fake sysfs, hardware is not touched
+sudo ./dev-run.sh                  # daemon from the source tree in a terminal
+python3 -m asushelper.app --show   # window from the source tree
+python3 -m tests.hw_check --gpu    # full check of every feature on a real laptop
 ```
+Translations: `asushelper/i18n/en.json` (Russian string → English).
 
-## Благодарности и лицензия
+## Credits and license
 
-Протоколы подсветки Aura, полосы Slash и логика режимов взяты из
-[G-Helper](https://github.com/seerge/g-helper) (seerge, GPL-3.0) — спасибо!
-Asus-helper распространяется под лицензией [GPL-3.0-or-later](LICENSE).
+The Aura lighting and Slash protocols and the profile logic come from
+[G-Helper](https://github.com/seerge/g-helper) (seerge, GPL-3.0) — thank you!
+Asus-helper is licensed under [GPL-3.0-or-later](LICENSE).

@@ -52,6 +52,8 @@ Window {
         visible = true
     }
 
+    Binding { target: Theme; property: "lang"; value: backend.language }
+    Binding { target: Theme; property: "dict"; value: backend.translations }
     Binding { target: Theme; property: "positive"; value: Kirigami.Theme.positiveTextColor }
     Binding { target: Theme; property: "highlight"; value: Kirigami.Theme.highlightColor }
     Binding { target: Theme; property: "negative"; value: Kirigami.Theme.negativeTextColor }
@@ -89,7 +91,7 @@ Window {
                     Kirigami.Heading { level: 3; text: "Asus-helper" }
                     QQC2.Label {
                         text: backend.connected ? (((backend.state || {}).model || {}).name || "ASUS") + " · " + Theme.profileName((backend.state || {}).profile)
-                                                : "демон не запущен"
+                                                : Theme.tr("демон не запущен")
                         color: backend.connected ? Kirigami.Theme.textColor : Kirigami.Theme.negativeTextColor
                         font: Kirigami.Theme.smallFont
                         opacity: backend.connected ? 0.7 : 1
@@ -98,22 +100,22 @@ Window {
                 Item { Layout.fillWidth: true }
                 QQC2.ToolButton {
                     icon.name: "office-chart-line-forecast-symbolic"
-                    text: "Графики"
+                    text: Theme.tr("Графики")
                     display: QQC2.AbstractButton.TextBesideIcon
                     visible: stack.depth === 1
                     onClicked: win.openMonitor()
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                    QQC2.ToolTip.text: "Графики температуры, вентиляторов и батареи"
+                    QQC2.ToolTip.text: Theme.tr("Графики температуры, вентиляторов и батареи")
                 }
                 QQC2.ToolButton {
                     icon.name: "window-close-symbolic"
-                    text: "Закрыть окно"
+                    text: Theme.tr("Закрыть окно")
                     display: QQC2.AbstractButton.IconOnly
                     onClicked: win.visible = false
                     QQC2.ToolTip.visible: hovered
                     QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                    QQC2.ToolTip.text: "Закрыть окно (Asus-helper остаётся в трее; выйти — правый клик по значку)"
+                    QQC2.ToolTip.text: Theme.tr("Закрыть окно (Asus-helper остаётся в трее; выйти — правый клик по значку)")
                 }
             }
 

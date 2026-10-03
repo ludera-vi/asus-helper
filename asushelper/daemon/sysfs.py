@@ -6,6 +6,7 @@
 import glob
 import logging
 import os
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def write(p: str, value) -> bool:
             f.write(str(value))
         return True
     except OSError as e:
-        log.warning("запись %s = %s не удалась: %s", p, value, e)
+        log.warning(_("запись %s = %s не удалась: %s"), p, value, e)
         return False
 
 

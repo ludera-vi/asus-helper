@@ -6,6 +6,7 @@
 import json
 
 from PySide6.QtCore import QProcess
+from ..i18n import _
 
 
 def _run(args: list[str], done) -> None:
@@ -54,7 +55,7 @@ def query(done) -> None:
 def set_rate(info: dict, hz: int, done) -> None:
     mode = (info.get("modes") or {}).get(str(hz))
     if not mode:
-        done(f"нет режима {hz} Гц")
+        done(_("нет режима {0} Гц").format(hz))
         return
     _run([f"output.{info['output']}.mode.{mode}"],
          lambda code, _out, err: done(None if code == 0 else f"kscreen-doctor: {err.strip()}"))

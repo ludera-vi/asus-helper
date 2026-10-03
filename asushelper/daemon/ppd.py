@@ -13,6 +13,7 @@ from gi.repository import Gio, GLib
 
 from . import hardware as hw
 from .service import POLKIT_ACTION, Service, authorize
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -71,12 +72,12 @@ class PowerProfiles:
 
     def own_names(self) -> None:
         def acquired(_c, n):
-            log.info("KDE видит режимы через %s", n)
+            log.info(_("KDE видит режимы через %s"), n)
             # PowerDevil, запущенный раньше демона, запомнил пустой список режимов — рассылаем всё
             self._emit(list(self._props()))
-        for name, _ in NAMES:
+        for name, _path in NAMES:
             Gio.bus_own_name_on_connection(self.bus, name, Gio.BusNameOwnerFlags.NONE, acquired,
-                                           lambda _c, n: log.warning("имя %s занято — работает power-profiles-daemon?", n))
+                                           lambda _c, n: log.warning(_("имя %s занято — работает power-profiles-daemon?"), n))
 
     # ---------- свойства ----------
     def active(self) -> str:
@@ -113,7 +114,7 @@ class PowerProfiles:
         # запись свойства синхронная, а polkit — асинхронный: проверяем и меняем режим после ответа
         def done(ok):
             if ok:
-                log.info("KDE переключил режим: %s", profile)
+                log.info(_("KDE переключил режим: %s"), profile)
                 self.service.modes.set_profile(profile)
         authorize(self.bus, sender, POLKIT_ACTION, done)
         return True
@@ -133,21 +134,21 @@ class PowerProfiles:
         if method == "HoldProfile":
             profile, reason, app = args
             if profile not in ("performance", "power-saver"):
-                invocation.return_dbus_error(iface + ".Error.InvalidArgs", "можно удерживать только performance или power-saver")
+                invocation.return_dbus_error(iface + ".Error.InvalidArgs", _("можно удерживать только performance или power-saver"))
                 return
             cookie = self.next_cookie
             self.next_cookie += 1
             if not self.holds:
                 self.before_hold = self.service.modes.current
             self.holds[cookie] = {"profile": profile, "reason": reason, "app": app, "sender": sender}
-            log.info("%s удерживает режим %s: %s", app, profile, reason)
+            log.info(_("%s удерживает режим %s: %s"), app, profile, reason)
             self._apply_holds()
             invocation.return_value(GLib.Variant("(u)", (cookie,)))
         elif method == "ReleaseProfile":
             if self._release(args[0]):
                 invocation.return_value(None)
             else:
-                invocation.return_dbus_error(iface + ".Error.InvalidArgs", "нет такого удержания")
+                invocation.return_dbus_error(iface + ".Error.InvalidArgs", _("нет такого удержания"))
         elif method == "SetActionEnabled":
             invocation.return_value(None)
 

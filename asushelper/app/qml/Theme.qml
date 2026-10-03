@@ -9,17 +9,22 @@ Item {
     property color negative: "red"
     property color neutral: "orange"
 
+    // Перевод: язык и словарь «русская строка → перевод» передаёт окно (Main.qml) из программы
+    property string lang: "ru"
+    property var dict: ({})
+    function tr(s) { return lang !== "ru" && dict[s] !== undefined ? dict[s] : s }
+
     readonly property var profiles: [
-        { id: "quiet", name: "Тихий", hint: "тише и дольше", icon: "battery-profile-powersave-symbolic" },
-        { id: "balanced", name: "Баланс", hint: "на каждый день", icon: "battery-profile-balanced-symbolic" },
-        { id: "performance", name: "Турбо", hint: "максимум", icon: "battery-profile-performance-symbolic" },
+        { id: "quiet", name: tr("Тихий"), hint: tr("тише и дольше"), icon: "battery-profile-powersave-symbolic" },
+        { id: "balanced", name: tr("Баланс"), hint: tr("на каждый день"), icon: "battery-profile-balanced-symbolic" },
+        { id: "performance", name: tr("Турбо"), hint: tr("максимум"), icon: "battery-profile-performance-symbolic" },
     ]
 
     readonly property var auraModes: [
-        { id: "static", name: "Ровный" },
-        { id: "breathe", name: "Дыхание" },
-        { id: "cycle", name: "Радуга" },
-        { id: "strobe", name: "Мигание" },
+        { id: "static", name: tr("Ровный") },
+        { id: "breathe", name: tr("Дыхание") },
+        { id: "cycle", name: tr("Радуга") },
+        { id: "strobe", name: tr("Мигание") },
     ]
 
     readonly property var swatches: ["#FFFFFF", "#FF0000", "#FF6A00", "#FFD000", "#00FF40",
@@ -46,15 +51,15 @@ Item {
 
     function gpuInfo(gpu, nv) {
         if (!gpu || !gpu.state) return ""
-        if (gpu.switching) return gpu.target === "eco" ? "выключаю NVIDIA…" : "включаю NVIDIA…"
+        if (gpu.switching) return gpu.target === "eco" ? tr("выключаю NVIDIA…") : tr("включаю NVIDIA…")
         switch (gpu.state) {
-        case "off": return "NVIDIA выключена"
-        case "suspended": return "NVIDIA спит"
+        case "off": return tr("NVIDIA выключена")
+        case "suspended": return tr("NVIDIA спит")
         case "active":
             return nv && nv.load !== undefined
-                ? "NVIDIA " + nv.load + "% · " + Math.round(nv.power) + " Вт · " + nv.temp + " °C"
-                : (gpu.holders || []).length ? "NVIDIA работает" : "NVIDIA включена"
-        case "missing": return "NVIDIA без драйвера"
+                ? "NVIDIA " + nv.load + "% · " + Math.round(nv.power) + tr(" Вт · ") + nv.temp + " °C"
+                : (gpu.holders || []).length ? tr("NVIDIA работает") : tr("NVIDIA включена")
+        case "missing": return tr("NVIDIA без драйвера")
         default: return gpu.state
         }
     }

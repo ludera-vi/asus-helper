@@ -9,6 +9,7 @@ import logging
 import os
 
 from .. import FANS, PROFILES
+from ..i18n import _
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ def default_profile() -> dict:
 
 DEFAULTS = {
     "version": 1,
+    "language": None,          # ru | en; None — как в системе (выбирается при установке)
     # Режим, который включается от сети и от батареи. Выбор режима вручную
     # запоминается для текущего источника питания (как в G-Helper).
     "profile_on_ac": "balanced",
@@ -91,9 +93,9 @@ class Config:
             with open(self.path) as f:
                 self.data = _merge(DEFAULTS, json.load(f))
         except FileNotFoundError:
-            log.info("нет %s — настройки по умолчанию", self.path)
+            log.info(_("нет %s — настройки по умолчанию"), self.path)
         except (OSError, ValueError) as e:
-            log.error("не удалось прочитать %s: %s — настройки по умолчанию", self.path, e)
+            log.error(_("не удалось прочитать %s: %s — настройки по умолчанию"), self.path, e)
         return self
 
     def save(self) -> None:

@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
 from .. import __version__  # noqa: E402
 from ..agent import Agent  # noqa: E402
 from .backend import Backend  # noqa: E402
+from ..i18n import _
 
 log = logging.getLogger("asus-helper")
 
@@ -33,8 +34,8 @@ APP_XML = """<node><interface name="org.asushelper.App"><method name="Toggle"/><
 
 PROFILE_ICONS = {"quiet": "battery-profile-powersave-symbolic", "balanced": "battery-profile-balanced-symbolic",
                  "performance": "battery-profile-performance-symbolic"}
-PROFILE_NAMES = {"quiet": "Тихий", "balanced": "Баланс", "performance": "Турбо"}
-GPU_NAMES = {"off": "выключена (Eco)", "suspended": "спит", "active": "работает", "missing": "без драйвера"}
+PROFILE_NAMES = {"quiet": _("Тихий"), "balanced": _("Баланс"), "performance": _("Турбо")}
+GPU_NAMES = {"off": _("выключена (Eco)"), "suspended": _("спит"), "active": _("работает"), "missing": _("без драйвера")}
 
 
 # Значок: цвет — режим (Тихий зелёный, Баланс синий, Турбо красный), фиолетовая точка в правом нижнем
@@ -114,16 +115,16 @@ class Tray:
         self.mode_actions = {}
         for p in ("quiet", "balanced", "performance"):
             a = QAction(QIcon.fromTheme(PROFILE_ICONS[p]), PROFILE_NAMES[p], menu, checkable=True)
-            a.triggered.connect(lambda _=False, p=p: backend.setProfile(p))
+            a.triggered.connect(lambda _checked=False, p=p: backend.setProfile(p))
             menu.addAction(a)
             self.mode_actions[p] = a
         menu.addSeparator()
-        self.eco = QAction("NVIDIA выключена (Eco)", menu, checkable=True)
+        self.eco = QAction(_("NVIDIA выключена (Eco)"), menu, checkable=True)
         self.eco.triggered.connect(lambda on: backend.setGpuMode("eco" if on else "standard", False))
         menu.addAction(self.eco)
         menu.addSeparator()
-        menu.addAction(QIcon.fromTheme("configure"), "Открыть", self.toggle)
-        menu.addAction(QIcon.fromTheme("application-exit"), "Выйти", app.quit)
+        menu.addAction(QIcon.fromTheme("configure"), _("Открыть"), self.toggle)
+        menu.addAction(QIcon.fromTheme("application-exit"), _("Выйти"), app.quit)
         self.menu = menu
         self.icon.setContextMenu(menu)
         backend.stateChanged.connect(self.update)
@@ -155,24 +156,24 @@ class Tray:
         self.eco.setChecked(g.get("state") == "off")
         self.eco.setEnabled(not g.get("switching"))
         if not self.backend.connected:
-            self.icon.setToolTip("Asus-helper: демон не запущен")
+            self.icon.setToolTip(_("Asus-helper: демон не запущен"))
             return
-        lines = [f"Режим: {PROFILE_NAMES.get(profile, profile)}"]
+        lines = [_("Режим: {0}").format(PROFILE_NAMES.get(profile, profile))]
         if g.get("supported"):
             lines.append(f"NVIDIA: {GPU_NAMES.get(g.get('state'), g.get('state'))}"
-                         + (" — Авто: от сети вкл., без сети выкл." if g.get("auto_eco") else ""))
+                         + (_(" — Авто: от сети вкл., без сети выкл.") if g.get("auto_eco") else ""))
             if g.get("auto_waiting"):
-                lines.append("Ждёт, пока NVIDIA отпустят: " + ", ".join(g["auto_waiting"]))
+                lines.append(_("Ждёт, пока NVIDIA отпустят: ") + ", ".join(g["auto_waiting"]))
         if s.get("cpu_temp") is not None:
-            lines.append(f"CPU {round(s['cpu_temp'])} °C · вентиляторы {s['fans']['cpu']}/{s['fans']['gpu']} об/мин")
+            lines.append(_("CPU {0} °C · вентиляторы {1}/{2} об/мин").format(round(s['cpu_temp']), s['fans']['cpu'], s['fans']['gpu']))
         self.icon.setToolTip("Asus-helper\n" + "\n".join(lines))
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="asus-helper")
-    ap.add_argument("--show", action="store_true", help="сразу открыть окно")
-    ap.add_argument("--page", choices=["main", "fans", "monitor"], default="main", help="с какой страницы открыть (с --show)")
-    ap.add_argument("--no-osd", action="store_true", help="не показывать карточки KDE (их показывает asus-helper-agent)")
+    ap.add_argument("--show", action="store_true", help=_("сразу открыть окно"))
+    ap.add_argument("--page", choices=["main", "fans", "monitor"], default="main", help=_("с какой страницы открыть (с --show)"))
+    ap.add_argument("--no-osd", action="store_true", help=_("не показывать карточки KDE (их показывает asus-helper-agent)"))
     args, qt_args = ap.parse_known_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -198,7 +199,7 @@ def main() -> int:
     engine.setInitialProperties({"anchorTop": panel_on_top()})
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("qml") / "Main.qml")))
     if not engine.rootObjects():
-        log.error("окно не загрузилось (ошибки QML выше)")
+        log.error(_("окно не загрузилось (ошибки QML выше)"))
         return 1
     window = engine.rootObjects()[0]
 
