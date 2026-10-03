@@ -270,10 +270,23 @@ def _unload_driver() -> bool:
     return p.returncode == 0
 
 
-# Драйвер, только что загруженный, ещё запускает видеокарту (прошивку GSP) — выгружать его в этот момент
-# опасно. Между включением и выключением выдерживаем паузу.
+# После включения или выключения BIOS ещё несколько секунд обрабатывает событие (подключает карту к шине
+# или снимает с неё питание через ACPI), а драйвер запускает прошивку видеокарты. Новое переключение в этот
+# момент может намертво застрять в ядре (так и было: выключение сразу после включения). Поэтому между
+# любыми двумя переключениями — пауза.
 SETTLE_S = 20
-_loaded_at = 0.0
+_changed_at = 0.0
+
+
+def _settle() -> None:
+    if (wait := _changed_at + SETTLE_S - time.monotonic()) > 0:
+        log.info(_("видеокарта только что переключалась — жду %d с"), round(wait))
+        time.sleep(wait)
+
+
+def _mark() -> None:
+    global _changed_at
+    _changed_at = time.monotonic()
 
 
 def _start_services() -> None:
@@ -285,8 +298,7 @@ def _start_services() -> None:
 
 
 def _load_driver() -> bool:
-    global _loaded_at
-    _loaded_at = time.monotonic()
+    _mark()
     return _run("modprobe", "-a", *MODULES_LOAD)
 
 
@@ -344,9 +356,7 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
 
         log.info(_("останавливаю сервисы NVIDIA"))
         subprocess.run(["systemctl", "stop", *SERVICES], capture_output=True)
-        if (wait := _loaded_at + SETTLE_S - time.monotonic()) > 0:
-            log.info(_("драйвер NVIDIA загружен только что — жду %d с"), wait)
-            time.sleep(wait)
+        _settle()
         log.info(_("выгружаю драйвер NVIDIA"))
         if not _unload_driver():
             _load_driver()
@@ -355,7 +365,9 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
         log.info(_("убираю NVIDIA с шины PCI"))
         _remove_from_bus(gpu)
 
+    _settle()
     log.info(_("отключаю NVIDIA в BIOS"))
+    _mark()
     if not sysfs.write(_attr("dgpu_disable"), 1):
         sysfs.write("/sys/bus/pci/rescan", 1)
         _load_driver()
@@ -371,7 +383,9 @@ def turn_on() -> None:
     if not bios_off() and find_gpu():
         return
     fixup()   # «призрак» помешал бы найти карту заново
+    _settle()
     log.info(_("включаю NVIDIA в BIOS"))
+    _mark()
     if not sysfs.write(_attr("dgpu_disable"), 0):
         raise GpuError(_("BIOS отказал во включении"))
     for _attempt in range(10):

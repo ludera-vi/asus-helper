@@ -52,6 +52,8 @@ XML = f"""
       <arg type="i" direction="in" name="value"/>
     </method>
     <method name="ResetPowerLimits"><arg type="s" direction="in" name="profile"/></method>
+    <!-- перед удалением: заводские лимиты, кривые вентиляторов BIOS, Turbo Boost включён -->
+    <method name="RestoreFactory"/>
     <method name="SetGpuMode">
       <arg type="s" direction="in" name="mode"/><arg type="b" direction="in" name="force"/>
     </method>
@@ -465,6 +467,20 @@ class Service:
         check_profile(profile)
         self.config.profile(profile)["power_limits"] = {}
         self._save_and_reapply(profile)      # лимиты без своего значения — заводские
+
+    def do_RestoreFactory(self):
+        """Вернуть ноутбуку заводское поведение — то, что демон менял в BIOS и ядре, без него не вернулось бы
+        до перезагрузки (а лимиты мощности BIOS может и помнить)."""
+        for attr, a in hw.power_limits().items():
+            if a["default"] is not None and a["min"] is not None and a["max"] is not None and a["max"] > a["min"]:
+                hw.set_armoury(attr, a["default"])
+        for f in hw.curve_fans():
+            hw.set_fan_curve_mode(f, hw.CURVE_BIOS)
+        if hw.turbo() is False:
+            hw.set_turbo(True)
+        if not gpu.bios_off():
+            gpu._start_services()          # nvidia-powerd и др., если демон их останавливал
+        log.info(_("заводские настройки возвращены (перед удалением)"))
 
     def do_SetGpuMode(self, mode, force):
         self.do_SetGpuModeFlags(mode, 1 if force else 0)

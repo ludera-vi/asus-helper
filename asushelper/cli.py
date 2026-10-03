@@ -25,6 +25,7 @@
   asus-helper-cli boost PROFILE on|off                 Turbo Boost процессора в режиме
   asus-helper-cli language ru|en        язык программы (демон и окно перезапустятся)
   asus-helper-cli diag                 что Asus-helper нашёл у ноутбука (без демона, для отчёта об ошибке)
+  asus-helper-cli restore              вернуть заводские лимиты, кривые вентиляторов BIOS, Turbo Boost
   asus-helper-cli import-asusd            перенести настройки из /etc/asusd (root, демон остановлен)
 """
 import json
@@ -210,7 +211,7 @@ def cmd_gpu(cl, args):
         print(_("Переключаю… (это занимает несколько секунд)"))
         # ждём окончания — демон сообщает сигналом, проще опросить состояние
         import time
-        for _attempt in range(60):
+        for _attempt in range(240):        # с паузой между переключениями — до двух минут
             time.sleep(0.5)
             g = cl.state()["gpu"]
             if not g["switching"]:
@@ -221,7 +222,7 @@ def cmd_gpu(cl, args):
                     raise Error(g["error"] + hint)
                 print(GPU_NAMES.get(g["state"], g["state"]))
                 return
-        raise Error(_("переключение не закончилось за 30 с — смотри журнал демона"))
+        raise Error(_("переключение не закончилось за 2 минуты — смотри журнал демона"))
     elif args[0] == "auto" and len(args) == 2 and args[1] in ("on", "off"):
         cl.call("SetGpuAutoEco", "b", args[1] == "on")
     else:
@@ -340,7 +341,12 @@ def cmd_language(cl, args):
     cl.call("SetLanguage", "s", args[0])
 
 
-COMMANDS = {"language": cmd_language, "diag": cmd_diag, "slash": cmd_slash, "boost": cmd_boost, "gpu": cmd_gpu, "kbd": cmd_kbd, "aura": cmd_aura, "status": cmd_status, "profile": cmd_profile, "auto": cmd_auto, "charge": cmd_charge,
+def cmd_restore(cl, args):
+    cl.call("RestoreFactory")
+    print(_("Заводские лимиты мощности, кривые вентиляторов BIOS и Turbo Boost возвращены"))
+
+
+COMMANDS = {"restore": cmd_restore, "language": cmd_language, "diag": cmd_diag, "slash": cmd_slash, "boost": cmd_boost, "gpu": cmd_gpu, "kbd": cmd_kbd, "aura": cmd_aura, "status": cmd_status, "profile": cmd_profile, "auto": cmd_auto, "charge": cmd_charge,
             "epp": cmd_epp, "fan": cmd_fan, "power": cmd_power, "import-asusd": cmd_import}
 
 

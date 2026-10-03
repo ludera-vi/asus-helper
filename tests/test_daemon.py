@@ -618,3 +618,27 @@ class PowerIndependenceTest(unittest.TestCase):
         self.assertEqual((fakesys.read(ROOT, nv), fakesys.read(ROOT, PL1)), ("76", "30"))
         self.modes._apply_power("quiet")                      # у Тихого своих нет — заводские
         self.assertEqual((fakesys.read(ROOT, nv), fakesys.read(ROOT, PL1)), ("87", "35"))
+
+
+class RestoreFactoryTest(unittest.TestCase):
+    """Перед удалением: заводские лимиты, кривые BIOS, Turbo Boost включён."""
+
+    def setUp(self):
+        fakesys.build(ROOT)
+        from gi.repository import Gio
+        from asushelper.daemon import service as svc
+        addr = Gio.dbus_address_get_for_bus_sync(Gio.BusType.SESSION, None)
+        bus = Gio.DBusConnection.new_for_address_sync(
+            addr, Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,
+            None, None)
+        self.s = svc.Service(bus, Config(os.path.join(CONF, "restore.json")))
+
+    def test_restore(self):
+        from asushelper.daemon import hardware as hw
+        hw.set_armoury("ppt_pl1_spl", 25)
+        hw.set_fan_curve("cpu", [30, 40, 50, 60, 70, 80, 90, 95], [10, 20, 30, 40, 50, 60, 70, 80])
+        hw.set_turbo(False)
+        self.s.do_RestoreFactory()
+        self.assertEqual(fakesys.read(ROOT, PL1), "35")
+        self.assertTrue(all(not hw.fan_curve(f)["enabled"] for f in hw.curve_fans()))
+        self.assertIs(hw.turbo(), True)

@@ -39,7 +39,7 @@ git clone https://github.com/ludera-vi/asus-helper
 cd asus-helper
 ./install.sh                  # проверит систему, предложит снимок snapper, поставит в /usr/local
 ./install.sh --update         # обновить после git pull
-./uninstall.sh                # удалить (настройки /etc/asus-helper остаются; --purge — и их)
+./uninstall.sh                # удалить всё, вернуть заводские настройки и перезагрузиться (--keep-config — оставить настройки)
 ```
 Установщик сначала спрашивает язык (English / Русский). Настройки из `/etc/asusd` (кривые, подсветка,
 режимы) переносятся при первой установке.

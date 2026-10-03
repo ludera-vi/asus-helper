@@ -39,7 +39,7 @@ git clone https://github.com/ludera-vi/asus-helper
 cd asus-helper
 ./install.sh                  # checks the system, offers a snapper snapshot, installs into /usr/local
 ./install.sh --update         # update after git pull
-./uninstall.sh                # remove (settings in /etc/asus-helper stay; --purge removes them too)
+./uninstall.sh                # remove everything, restore factory settings and reboot (--keep-config keeps settings)
 ```
 The installer first asks for the language (English / Русский). Settings from `/etc/asusd` (curves,
 lighting, profiles) are imported on the first install.
