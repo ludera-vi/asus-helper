@@ -67,6 +67,12 @@ if [ -z "$UILANG" ] || [ $UPDATE = 0 ]; then
     read -rp "  > [$def] " choice
     case "${choice:-$def}" in 2|ru|RU|р|Р) UILANG=ru ;; *) UILANG=en ;; esac
 fi
+# сообщения sudo, pacman, systemctl — на выбранном языке
+if [ "$UILANG" = ru ] && locale -a 2>/dev/null | grep -qi '^ru_RU.utf-\?8$'; then
+    export LC_MESSAGES=ru_RU.UTF-8 LANGUAGE=ru
+elif [ "$UILANG" = en ]; then
+    export LC_MESSAGES=C.UTF-8; unset LANGUAGE
+fi
 
 if [ $UPDATE = 1 ] && [ ! -e /usr/local/lib/systemd/system/asus-helperd.service ] && [ ! -e /etc/systemd/system/asus-helperd.service ]; then
     L "Asus-helper ещё не установлен — запустите ./install.sh без --update" "Asus-helper is not installed yet — run ./install.sh without --update"; echo
@@ -74,7 +80,7 @@ if [ $UPDATE = 1 ] && [ ! -e /usr/local/lib/systemd/system/asus-helperd.service 
 fi
 
 mkdir -p "$(dirname "$LOG")"
-echo "=== asus-helper install $(date) ===" > "$LOG"
+echo "=== asus-helper install $(date) lang=$UILANG ===" > "$LOG"
 
 clear 2>/dev/null
 if [ "$UILANG" = ru ]; then cat <<EOF
