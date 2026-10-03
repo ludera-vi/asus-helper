@@ -642,3 +642,29 @@ class RestoreFactoryTest(unittest.TestCase):
         self.assertEqual(fakesys.read(ROOT, PL1), "35")
         self.assertTrue(all(not hw.fan_curve(f)["enabled"] for f in hw.curve_fans()))
         self.assertIs(hw.turbo(), True)
+
+
+class HotkeyGuardTest(unittest.TestCase):
+    """Два переключения подряд: захват не обрывается, пока идёт второе."""
+
+    def test_shared_until_last_release(self):
+        import time as _t
+        from unittest import mock
+        from asushelper.daemon import gpu
+        closed = []
+        with mock.patch.object(gpu.sysfs, "find", return_value=["/sys/class/input/event5"]), \
+             mock.patch.object(gpu.sysfs, "read", return_value="Video Bus"), \
+             mock.patch.object(gpu.os, "open", return_value=99), \
+             mock.patch.object(gpu.os, "read", return_value=b""), \
+             mock.patch.object(gpu.os, "close", side_effect=closed.append), \
+             mock.patch.object(gpu.fcntl, "ioctl"):
+            a = gpu.HotkeyGuard.acquire()
+            b = gpu.HotkeyGuard.acquire()
+            self.assertIs(a, b)
+            a.release_later(0.01)
+            _t.sleep(0.1)
+            self.assertEqual(closed, [])                    # второе переключение ещё идёт
+            b.release_later(0.01)
+            _t.sleep(0.1)
+            self.assertEqual(closed, [99])
+            self.assertIsNone(gpu.HotkeyGuard._current)

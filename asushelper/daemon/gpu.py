@@ -201,11 +201,23 @@ SWALLOW_DEVICES = ("Video Bus", "Asus WMI hotkeys")
 
 
 class HotkeyGuard:
-    """Захват устройств, которые шлют ложную клавишу дисплея; отпускает с задержкой."""
+    """Захват устройств, которые шлют ложную клавишу дисплея; отпускает с задержкой.
+    Один на все переключения: если новое началось, пока прежнее ещё не отпустило устройства, —
+    захват продолжается, а не обрывается посреди нового переключения."""
+    _current: "HotkeyGuard | None" = None
+    _lock = threading.Lock()
 
     def __init__(self):
         self.fds: dict[str, int] = {}     # event-узел → дескриптор
-        self.grab_new()
+        self.users = 0
+
+    @classmethod
+    def acquire(cls) -> "HotkeyGuard":
+        with cls._lock:
+            g = cls._current = cls._current or cls()
+            g.users += 1
+            g.grab_new()
+            return g
 
     def grab_new(self) -> None:
         for e in sysfs.find("/sys/class/input/event*"):
@@ -214,25 +226,37 @@ class HotkeyGuard:
                 continue
             try:
                 fd = os.open("/dev/input/" + node, os.O_RDONLY | os.O_NONBLOCK)
+            except OSError as err:
+                log.info(_("не захватить %s: %s"), node, err)
+                continue
+            try:
                 fcntl.ioctl(fd, EVIOCGRAB, 1)
                 self.fds[node] = fd
             except OSError as err:
+                os.close(fd)
                 log.info(_("не захватить %s: %s"), node, err)
 
     def release_later(self, delay: float = 2.0) -> None:
         """Событие от BIOS приходит с задержкой, а при включении NVIDIA появляется новый «Video Bus» —
-        его тоже держим, потом отпускаем всё."""
+        его тоже держим, потом отпускаем всё (если других переключений уже нет)."""
         def run():
             time.sleep(delay)
-            self.grab_new()
+            with self._lock:
+                self.grab_new()
             time.sleep(delay)
-            for fd in self.fds.values():
-                try:
-                    os.read(fd, 4096 * 24)      # выбросить накопленное
-                except OSError:
-                    pass
-                os.close(fd)                    # закрытие снимает захват
-            self.fds.clear()
+            with self._lock:
+                self.users -= 1
+                if self.users > 0:
+                    return
+                for fd in self.fds.values():
+                    try:
+                        os.read(fd, 4096 * 24)      # выбросить накопленное
+                    except OSError:
+                        pass
+                    os.close(fd)                    # закрытие снимает захват
+                self.fds.clear()
+                if HotkeyGuard._current is self:
+                    HotkeyGuard._current = None
         threading.Thread(target=run, daemon=True).start()
 
 
@@ -445,7 +469,7 @@ class Switcher:
                     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except OSError:
                     raise GpuError(_("видеокарту уже переключает другая программа (gpu-eco?)"))
-                guard = None if sysfs.ROOT else HotkeyGuard()
+                guard = None if sysfs.ROOT else HotkeyGuard.acquire()
                 try:
                     (turn_off(force, ignore_displays) if want_off else turn_on())
                 finally:

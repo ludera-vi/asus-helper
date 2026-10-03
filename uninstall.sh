@@ -110,9 +110,18 @@ echo "${B}$(L "Asus-helper удалён." "Asus-helper removed.")${R}"
 echo "  $(L "Перезагрузка вернёт всё остальное как было до установки: рабочий стол, драйвер NVIDIA, режимы." \
              "A reboot returns everything else to how it was before installing: desktop, NVIDIA driver, modes.")"
 
-# Процесс, намертво застрявший в ядре (состояние D дольше минуты, например выгрузка драйвера видеокарты),
-# не даст системе выключиться: обычная перезагрузка повиснет навсегда.
-stuck=$(ps -eo stat=,etimes=,comm= | awk '$1 ~ /^D/ && $2 > 60 {print $3}' | sort | uniq -c | sort -rn | head -3)
+# Процесс, намертво застрявший в ядре (например, выгрузка драйвера видеокарты), не даст системе выключиться:
+# обычная перезагрузка повиснет навсегда. Застрявший — в состоянии D при каждой проверке за 10 секунд
+# (на мгновение в D попадает кто угодно, а возраст потоков ядра ничего не говорит).
+in_d() { ps -eo pid=,stat= | awk '$2 ~ /^D/ {print $1}' | sort; }
+stuck_pids=$(in_d)
+for _ in 1 2; do
+    [ -z "$stuck_pids" ] && break
+    sleep 5
+    stuck_pids=$(comm -12 <(echo "$stuck_pids") <(in_d))
+done
+stuck=""
+[ -n "$stuck_pids" ] && stuck=$(ps -o comm= -p $(echo $stuck_pids | tr ' ' ,) | sort | uniq -c | sort -rn | head -3)
 read -rp "$(L "Перезагрузить сейчас? Сохраните открытые документы. [Д/н] " "Reboot now? Save your open documents first. [Y/n] ")" a
 yes_default "$a" || { echo "  $(L "Перезагрузитесь позже сами." "Reboot later yourself.")"; exit 0; }
 if [ -z "$stuck" ]; then
