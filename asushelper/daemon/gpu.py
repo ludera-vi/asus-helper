@@ -372,3 +372,41 @@ class Switcher:
             self.on_done(err)
             return GLib.SOURCE_REMOVE
         GLib.idle_add(done)
+
+
+# ---------- рабочий стол только на встроенной видеокарте ----------
+# KWin при запуске захватывает все видеокарты, и NVIDIA без выхода из сеанса уже не выключить.
+# Служба KWin читает /run/asus-helper/kwin.env (EnvironmentFile в drop-in из пакета). Пишем туда
+# «только встроенная» лишь когда это безопасно: есть NVIDIA, MUX в гибриде и экран ведёт встроенная
+# видеокарта (/dev/dri/igpu от правила udev). Иначе файл пустой — KWin запускается как обычно,
+# поэтому чёрного экрана не будет, даже если что-то пошло не так (или демон не запущен).
+KWIN_ENV = "/run/asus-helper/kwin.env"
+IGPU_LINK = "/dev/dri/igpu"
+
+
+def kwin_env_lines() -> list[str]:
+    if not (supported() and mux_hybrid()):
+        return []
+    link = sysfs.path(IGPU_LINK)
+    if not os.path.exists(link):
+        return []
+    card = os.path.basename(os.path.realpath(link))
+    if sysfs.read(f"/sys/class/drm/{card}/device/vendor") == "0x10de":   # «встроенная» оказалась NVIDIA
+        return []
+    return ["KWIN_DRM_DEVICES=" + IGPU_LINK,
+            "__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json",
+            "__GLX_VENDOR_LIBRARY_NAME=mesa"]
+
+
+def write_kwin_env() -> None:
+    lines = kwin_env_lines()
+    path = sysfs.path(KWIN_ENV)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write("# Asus-helper: рабочий стол KDE только на встроенной видеокарте (см. gpu.py)\n")
+            f.write("".join(l + "\n" for l in lines))
+    except OSError as e:
+        log.warning("не записать %s: %s", KWIN_ENV, e)
+        return
+    log.info("рабочий стол KDE: %s", "только встроенная видеокарта" if lines else "как обычно (все видеокарты)")

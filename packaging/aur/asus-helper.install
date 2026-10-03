@@ -1,0 +1,23 @@
+post_install() {
+    cat <<'MSG'
+==> Asus-helper установлен.
+    1. Включите демон:          sudo systemctl enable --now asus-helperd
+    2. Выйдите из сеанса и войдите снова — значок появится в трее, а рабочий стол KDE
+       перейдёт на встроенную видеокарту (тогда Eco включается без выхода из сеанса).
+    Что нашлось у ноутбука:     asus-helper-cli diag
+MSG
+}
+
+post_upgrade() {
+    systemctl daemon-reload
+    systemctl try-restart asus-helperd.service
+    echo "==> Демон Asus-helper перезапущен. Окно перезапустится при следующем входе (или: asus-helper)."
+}
+
+pre_remove() {
+    systemctl disable --now asus-helperd.service 2>/dev/null
+    # NVIDIA не должна остаться выключенной в BIOS без программы, которая умеет её включить
+    f=/sys/class/firmware-attributes/asus-armoury/attributes/dgpu_disable/current_value
+    [ "$(cat $f 2>/dev/null)" = 1 ] && echo 0 > $f && echo "==> NVIDIA включена в BIOS (появится после перезагрузки)"
+    true
+}

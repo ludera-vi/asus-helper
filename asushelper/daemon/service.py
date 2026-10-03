@@ -194,6 +194,7 @@ class Service:
 
     # ---------- события ----------
     def startup(self) -> None:
+        gpu.write_kwin_env()
         if gpu.supported():
             gpu.fixup()
         self.apply_keyboard()

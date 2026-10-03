@@ -1,0 +1,3 @@
+# Asus-helper: постоянное имя /dev/dri/igpu для видеокарты, которая ведёт экран при загрузке
+# (на ноутбуках с гибридной графикой — встроенная Intel/AMD). Нужно рабочему столу KDE (см. asus-helper-kwin.conf).
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", ATTRS{boot_vga}=="1", SYMLINK+="dri/igpu"
