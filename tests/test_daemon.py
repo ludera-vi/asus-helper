@@ -465,6 +465,17 @@ class FactoryCurvesTest(unittest.TestCase):
         self.modes._apply_fans("balanced")
         self.assertNotEqual(f["balanced"]["cpu"]["temp"][0], 99)
 
+    def test_all_profiles_learned_at_start(self):
+        from asushelper.daemon import hardware as hw
+        before = hw.profile()
+        self.modes.learn_factory_curves()
+        f = self.cfg.data["factory_curves"]
+        self.assertEqual({p for p in f if set(f[p]) == {"cpu", "gpu"}}, {"quiet", "balanced", "performance"})
+        self.modes.learn_factory_curves()                   # всё известно — режим больше не трогает
+        hw.set_profile(before)
+        self.modes.learn_factory_curves()
+        self.assertEqual(hw.profile(), before)
+
     def test_custom_curve_only_in_its_profile(self):
         quiet = {"enabled": True, "temp": [30, 40, 50, 60, 70, 80, 90, 95], "pwm": [0, 10, 20, 40, 80, 120, 200, 255]}
         self.cfg.data["profiles"]["quiet"]["fan_curves"]["cpu"] = quiet

@@ -154,6 +154,12 @@ Window {
             readonly property real pageHeight: loader.implicitHeight
             contentWidth: availableWidth
             QQC2.ScrollBar.horizontal.policy: QQC2.ScrollBar.AlwaysOff
+            // только вертикально: Flickable по умолчанию даёт тянуть и вбок, если ширина содержимого хоть
+            // на пиксель не совпала с окном, — страница уезжала влево и перехватывала перетаскивание точек
+            Component.onCompleted: {
+                contentItem.flickableDirection = Flickable.VerticalFlick
+                contentItem.boundsBehavior = Flickable.StopAtBounds
+            }
             Loader {
                 id: loader
                 width: sv.availableWidth

@@ -26,7 +26,7 @@ Item {
     property int dragIndex: -1
     property int hoverIndex: -1
 
-    implicitHeight: Kirigami.Units.gridUnit * 9
+    implicitHeight: Kirigami.Units.gridUnit * 14
 
     function xOf(t) { return padL + (t - tMin) / (tMax - tMin) * plotW }
     function yOf(p) { return padT + (1 - p / 255) * plotH }
@@ -35,7 +35,7 @@ Item {
     function pct(p) { return Math.round(p * 100 / 255) }
 
     function nearest(x, y) {
-        let best = -1, bestD = Kirigami.Units.gridUnit * 1.2
+        let best = -1, bestD = Kirigami.Units.gridUnit * 1.6
         for (let i = 0; i < temp.length; i++) {
             const d = Math.hypot(xOf(temp[i]) - x, yOf(pwm[i]) - y)
             if (d < bestD) { best = i; bestD = d }
@@ -107,7 +107,7 @@ Item {
 
             // точки
             for (let i = 0; i < temp.length; i++) {
-                const r = (i === dragIndex || i === hoverIndex) ? 6 : 4
+                const r = (i === dragIndex || i === hoverIndex) ? 8 : 6
                 ctx.beginPath()
                 ctx.arc(xOf(temp[i]), yOf(pwm[i]), r, 0, 2 * Math.PI)
                 ctx.fillStyle = editable ? accent : Qt.alpha(text, 0.5)
@@ -139,12 +139,23 @@ Item {
         anchors.fill: parent
         enabled: editor.editable
         hoverEnabled: true
-        cursorShape: editor.dragIndex >= 0 || editor.hoverIndex >= 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+        // перетаскивание точки не отдавать прокрутке страницы: иначе отпускание кнопки сюда не доходит,
+        // точка «прилипает» к курсору и отлипает от случайного события
+        preventStealing: true
+        cursorShape: editor.dragIndex >= 0 ? Qt.ClosedHandCursor
+                   : editor.hoverIndex >= 0 ? Qt.OpenHandCursor : Qt.ArrowCursor
+        function finish() {
+            if (editor.dragIndex >= 0) editor.edited()
+            editor.dragIndex = -1
+            canvas.requestPaint()
+        }
         onPressed: function(mouse) { editor.dragIndex = editor.nearest(mouse.x, mouse.y); canvas.requestPaint() }
-        onReleased: { if (editor.dragIndex >= 0) editor.edited(); editor.dragIndex = -1; canvas.requestPaint() }
+        onReleased: finish()
+        onCanceled: finish()
         onExited: { editor.hoverIndex = -1; canvas.requestPaint() }
         onPositionChanged: function(mouse) {
             const i = editor.dragIndex
+            if (i >= 0 && !pressed) { finish(); return }      // кнопку отпустили где-то вне редактора
             if (i < 0) {
                 const h = editor.nearest(mouse.x, mouse.y)
                 if (h !== editor.hoverIndex) { editor.hoverIndex = h; canvas.requestPaint() }

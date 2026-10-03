@@ -8,6 +8,7 @@
 демон следит за platform_profile и после любой смены режима применяет его настройки заново.
 """
 import logging
+import time
 import os
 import subprocess
 
@@ -76,7 +77,28 @@ class Modes:
         name = self.config.profile_for(self.ac) if self.config.data["auto_profile"] else (hw.profile() or "balanced")
         log.info(_("старт: питание %s, режим %s"), _("сеть") if self.ac else _("батарея"), name)
         self._nvidia_powerd(self.ac)
+        self.learn_factory_curves()
         self._apply(name, write_profile=True)
+
+    def learn_factory_curves(self) -> None:
+        """Заводские кривые вентиляторов всех режимов — сразу при старте, а не когда режим впервые включат:
+        иначе редактору кривых «Турбо» не с чего начать. BIOS отдаёт кривую только текущего режима, поэтому
+        на долю секунды включаем каждый ещё не изученный режим; нужный режим ставится сразу после."""
+        if not hw.has_fan_curves():
+            return
+        fans = hw.curve_fans()
+        cache = self.config.data.setdefault("factory_curves", {})
+        missing = [p for p in PROFILES if p in hw.profile_choices() and any(f not in cache.get(p, {}) for f in fans)]
+        for name in missing:
+            if hw.profile() != name and not hw.set_profile(name):
+                continue
+            time.sleep(FANS_DELAY_MS / 1000)
+            for fan in fans:
+                if c := hw.factory_fan_curve(fan):
+                    cache.setdefault(name, {})[fan] = {"temp": c["temp"], "pwm": c["pwm"]}
+            log.info(_("%s: запомнены заводские кривые %s"), name, ", ".join(cache.get(name, {})))
+        if missing:
+            self.config.save()
 
     # ---------- применение ----------
     def _apply(self, name: str, write_profile: bool) -> None:
