@@ -537,6 +537,19 @@ class AutoEcoTest(unittest.TestCase):
         self.s._gpu_done(None)
         self.assertEqual(self.started, [True])              # после переключения — Eco
 
+    def test_busy_card_is_retried_a_few_times(self):
+        self.s.gpu.retryable = True                         # экран входа держал карту при загрузке
+        for _ in range(5):
+            self.s._gpu_done("занята")
+            if self.s._auto_timer:
+                GLib.source_remove(self.s._auto_timer)
+                self.s._auto_timer = 0
+        self.assertEqual(self.s._auto_retries, self.s.AUTO_RETRIES)
+        from unittest import mock
+        with mock.patch.object(self.s.modes, "power_source_changed"), mock.patch.object(self.s, "_auto_eco"):
+            self.s.power_source_changed(True)               # смена питания — снова можно
+        self.assertEqual(self.s._auto_retries, 0)
+
     def test_stuck_driver_blocks_switching(self):
         class Hung:
             def poll(self):

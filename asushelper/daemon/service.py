@@ -123,6 +123,7 @@ class Service:
         self._state_cache = {}
         self.auto_waiting: list[str] | None = None   # «Авто» ждёт, пока эти программы отпустят NVIDIA
         self._auto_timer = 0
+        self._auto_retries = 0      # «Авто» не смогло выключить занятую карту — сколько раз уже повторяло
         self.idle = None
         self._gpu_state()
         self.history = history.History(paused=lambda: self.gpu.busy)
@@ -236,6 +237,7 @@ class Service:
         self._watch_brightness()
 
     def resumed(self) -> None:
+        self._auto_retries = 0
         self.modes.ac = hw.on_ac()
         if self.idle:
             self.idle.reset()
@@ -247,6 +249,7 @@ class Service:
     def power_source_changed(self, ac: bool) -> None:
         if ac == self.modes.ac:
             return
+        self._auto_retries = 0
         self.modes.power_source_changed(ac)
         self._auto_eco()
 
@@ -268,6 +271,7 @@ class Service:
         return GLib.SOURCE_CONTINUE
 
     AUTO_RECHECK_S = 10
+    AUTO_RETRIES = 3
 
     def _auto_eco(self) -> bool:
         """«Авто»: от сети NVIDIA включена, без сети — Eco. Если NVIDIA чем-то занята (игра, DaVinci),
@@ -311,6 +315,7 @@ class Service:
         if self._auto_eco():
             return GLib.SOURCE_CONTINUE
         self._auto_timer = 0
+        self._auto_retries = 0      # «Авто» не смогло выключить занятую карту — сколько раз уже повторяло
         return GLib.SOURCE_REMOVE
 
     def _gpu_done(self, error) -> None:
@@ -319,8 +324,15 @@ class Service:
                              GLib.Variant("(ss)", (gpu.state(), error or "")))
         self._changed()
         if not error and not self.gpu.busy:
+            self._auto_retries = 0
             # питание могло смениться, пока карта переключалась, — «Авто» тогда событие пропустило
             self._auto_eco()
+        elif (error and self.gpu.retryable and self.config.data["gpu"]["auto_eco"]
+              and self._auto_retries < self.AUTO_RETRIES and not self._auto_timer):
+            # карту заняли (например, экран входа при загрузке) — «Авто» попробует снова, когда освободится
+            self._auto_retries += 1
+            log.info(_("«Авто»: карта занята — попробую снова через %d с"), self.AUTO_RECHECK_S)
+            self._auto_timer = GLib.timeout_add_seconds(self.AUTO_RECHECK_S, self._auto_recheck)
 
     def _watch_brightness(self) -> None:
         import os

@@ -396,5 +396,6 @@
  "подсветка клавиатуры: снова горит": "keyboard backlight: on again",
  "подсветка клавиатуры: погашена — %d с без нажатий": "keyboard backlight: off — %d s without input",
  "Выйти из сеанса": "Log out",
- "Рабочий стол KDE запущен до установки и работает на %1 — выключить её можно будет после выхода из сеанса и входа снова (один раз)": "The KDE desktop started before the install and runs on %1 — it can be turned off after you log out and back in (once)"
+ "Рабочий стол KDE запущен до установки и работает на %1 — выключить её можно будет после выхода из сеанса и входа снова (один раз)": "The KDE desktop started before the install and runs on %1 — it can be turned off after you log out and back in (once)",
+ "«Авто»: карта занята — попробую снова через %d с": "Auto: the GPU is busy — will retry in %d s"
 }

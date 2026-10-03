@@ -33,9 +33,10 @@ LOCK = "/run/gpu-eco.lock"
 
 class GpuError(Exception):
     """can_force — карту держат обычные программы пользователя, их можно закрыть и выключить."""
-    def __init__(self, text: str, can_force: bool = False):
+    def __init__(self, text: str, can_force: bool = False, busy: bool = False):
         super().__init__(text)
         self.can_force = can_force
+        self.busy = busy            # карту кто-то занял — позже может освободиться, можно повторить
 
 
 # Рабочий стол и система: их нельзя закрывать никогда — это обрушит сеанс или всю систему.
@@ -311,18 +312,22 @@ def _unload_driver() -> bool:
 # момент может намертво застрять в ядре (так и было: выключение сразу после включения). Поэтому между
 # любыми двумя переключениями — пауза.
 SETTLE_S = 20
-_changed_at = 0.0
+_changed_at: float | None = None      # только настоящие переключения; при старте демона паузы нет
+
+
+def _now() -> float:
+    return time.clock_gettime(time.CLOCK_BOOTTIME)   # вместе со временем сна, в отличие от monotonic
 
 
 def _settle() -> None:
-    if (wait := _changed_at + SETTLE_S - time.monotonic()) > 0:
+    if _changed_at is not None and (wait := _changed_at + SETTLE_S - _now()) > 0:
         log.info(_("видеокарта только что переключалась — жду %d с"), round(wait))
         time.sleep(wait)
 
 
 def _mark() -> None:
     global _changed_at
-    _changed_at = time.monotonic()
+    _changed_at = _now()
 
 
 def _start_services() -> None:
@@ -371,15 +376,16 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
         raise GpuError(_("MUX в режиме «только NVIDIA» — сначала переключите MUX в гибрид и перезагрузитесь"))
 
     if gpu:
+        _settle()                   # до проверки: за время паузы карту мог занять, например, экран входа
         busy = holders(gpu)
         if busy:
             listed = ", ".join(names(busy))
             protected = names([(p, c) for p, c in busy if is_protected(p, c)])
             if protected:
                 # закрывать нельзя — это рабочий стол или система
-                raise GpuError(_("NVIDIA держит рабочий стол ({0}). Он отпустит её после выхода из сеанса и входа снова — один раз после установки Asus-helper").format(', '.join(protected)))
+                raise GpuError(_("NVIDIA держит рабочий стол ({0}). Он отпустит её после выхода из сеанса и входа снова — один раз после установки Asus-helper").format(', '.join(protected)), busy=True)
             if not force:
-                raise GpuError(_("NVIDIA используют: {0}").format(listed), can_force=True)
+                raise GpuError(_("NVIDIA используют: {0}").format(listed), can_force=True, busy=True)
             log.info(_("закрываю программы на NVIDIA: %s"), listed)
             for pid, _comm in busy:
                 try:
@@ -392,12 +398,11 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
 
         log.info(_("останавливаю сервисы NVIDIA"))
         subprocess.run(["systemctl", "stop", *SERVICES], capture_output=True)
-        _settle()
         log.info(_("выгружаю драйвер NVIDIA"))
         if not _unload_driver():
             _load_driver()
             _start_services()
-            raise GpuError(_("драйвер не выгрузился (что-то ещё использует карту) — всё возвращено как было"))
+            raise GpuError(_("драйвер не выгрузился (что-то ещё использует карту) — всё возвращено как было"), busy=True)
         log.info(_("убираю NVIDIA с шины PCI"))
         _remove_from_bus(gpu)
 
@@ -446,6 +451,7 @@ class Switcher:
     def __init__(self, on_done):
         self.on_done = on_done      # on_done(error: str | None) — вызывается в главном потоке
         self.busy = False
+        self.retryable = False      # последняя ошибка — «карту заняли», можно попробовать позже
         self.target: str | None = None
         self._error: str | None = None
         self._error_at = 0.0
@@ -476,7 +482,7 @@ class Switcher:
     def _work(self, want_off: bool, force: bool, ignore_displays: bool) -> None:
         from gi.repository import GLib
         err = None
-        can_force = False
+        can_force = retryable = False
         try:
             with open(sysfs.path(LOCK) if sysfs.ROOT else LOCK, "w") as lock:
                 try:
@@ -491,7 +497,7 @@ class Switcher:
                         guard.release_later()
         except GpuError as e:
             err = str(e)
-            can_force = e.can_force
+            can_force, retryable = e.can_force, e.busy
             log.warning(_("видеокарта: %s"), err)
         except Exception as e:
             err = _("внутренняя ошибка: {0}").format(e)
@@ -501,6 +507,7 @@ class Switcher:
             self.busy = False
             self.last_error = err
             self.can_force = can_force
+            self.retryable = retryable
             self.on_done(err)
             return GLib.SOURCE_REMOVE
         GLib.idle_add(done)
