@@ -7,3 +7,5 @@ MainPage 1.0 MainPage.qml
 FansPage 1.0 FansPage.qml
 Chart 1.0 Chart.qml
 MonitorPage 1.0 MonitorPage.qml
+PowerPage 1.0 PowerPage.qml
+ProfileTabs 1.0 ProfileTabs.qml

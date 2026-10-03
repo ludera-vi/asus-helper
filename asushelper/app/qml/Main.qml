@@ -46,6 +46,11 @@ Window {
     function openFans() {
         if (stack.depth === 1) stack.push(scrolled.createObject(stack, { page: fansPage }))
     }
+    property string powerProfile: "balanced"
+    function openPower(profile) {
+        powerProfile = profile
+        if (stack.depth === 2) stack.push(scrolled.createObject(stack, { page: powerPage }))
+    }
     function toggle() {
         if (visible) { visible = false; return }
         keepOpen.restart()
@@ -169,7 +174,8 @@ Window {
     }
 
     Component { id: mainPage; MainPage { onOpenFans: win.openFans(); onOpenMonitor: win.openMonitor() } }
-    Component { id: fansPage; FansPage { onBack: stack.pop() } }
+    Component { id: fansPage; FansPage { onBack: stack.pop(); onOpenPower: p => win.openPower(p) } }
+    Component { id: powerPage; PowerPage { profile: win.powerProfile; onBack: stack.pop() } }
     Component { id: monitorPage; MonitorPage { onBack: stack.pop() } }
 
     // высота содержимого текущей страницы — по ней окно подбирает свою высоту
