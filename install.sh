@@ -105,6 +105,8 @@ model=$(cat /sys/class/dmi/id/product_name 2>/dev/null)
 if [[ "$vendor" == ASUS* ]]; then ok "$(L "Ноутбук" "Laptop"): $model"; else fail "$(L "Это не ASUS" "Not an ASUS") ($vendor)"; problems=1; fi
 if [ -e /sys/firmware/acpi/platform_profile ]; then ok "$(L "Режимы производительности (platform_profile)" "Performance profiles (platform_profile)")"
 else fail "$(L "Нет" "Missing") /sys/firmware/acpi/platform_profile"; problems=1; fi
+if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then ok "KDE Plasma${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}"
+else warn "$(L "Не KDE Plasma — окно и значок рассчитаны на Plasma 6 (демон и asus-helper-cli работают везде)" "Not KDE Plasma — the window and tray icon target Plasma 6 (the daemon and asus-helper-cli work anywhere)")"; fi
 if [ -d /sys/class/firmware-attributes/asus-armoury ]; then ok "$(L "Ядро с asus-armoury" "Kernel with asus-armoury")"
 else warn "$(L "Нет asus-armoury — лимиты мощности будут недоступны" "No asus-armoury — power limits will be unavailable")"; fi
 
@@ -113,7 +115,12 @@ python3 -c 'import gi' 2>/dev/null || missing+=(python-gobject)
 python3 -c 'import PySide6' 2>/dev/null || missing+=(pyside6)
 command -v make >/dev/null || missing+=(make)
 command -v kscreen-doctor >/dev/null || missing+=(libkscreen)
-if [ ${#missing[@]} -eq 0 ]; then ok "$(L "Пакеты" "Packages"): python-gobject, pyside6, kscreen-doctor"
+# окно: Kirigami, стиль KDE для QML, всплывающее окно у трея; названия видеокарт — база pci.ids
+[ -d /usr/lib/qt6/qml/org/kde/kirigami ] || missing+=(kirigami)
+[ -d /usr/lib/qt6/qml/org/kde/desktop ] || missing+=(qqc2-desktop-style)
+[ -d /usr/lib/qt6/qml/org/kde/layershell ] || missing+=(layer-shell-qt)
+[ -e /usr/share/hwdata/pci.ids ] || missing+=(hwdata)
+if [ ${#missing[@]} -eq 0 ]; then ok "$(L "Пакеты" "Packages"): python-gobject, pyside6, kscreen-doctor, kirigami, layer-shell-qt"
 else warn "$(L "Не хватает пакетов" "Missing packages"): ${missing[*]} — $(L "поставлю" "will install")"; fi
 [ $problems -eq 0 ] || { fail "$(L "Установка невозможна" "Installation is not possible")"; exit 1; }
 
@@ -184,15 +191,9 @@ cleanup_old() {
                /usr/share/polkit-1/actions/org.{asushero,asusludera}.policy
     rm -f "$HOME/.config/systemd/user/plasma-kwin_wayland.service.d/asus-helper-igpu.conf" \
           "$HOME/.config/environment.d/90-kwin-igpu.conf" "$HOME/.config/environment.d/91-igpu-apps.conf" \
-          "$HOME/.config/autostart/asus-helper.desktop" \
+          "$HOME/.local/share/applications/asus-helper.desktop" "$HOME/.config/autostart/asus-helper.desktop" \
           "$HOME/.local/share/icons/hicolor/scalable/apps/asus-helper.svg"
     rmdir "$HOME/.config/systemd/user/plasma-kwin_wayland.service.d" 2>/dev/null
-    # Ярлык прежней версии лежал в ~/.local/share/applications, и горячие клавиши KDE (клавиша ROG)
-    # помнят этот путь до следующего входа — оставляем там ссылку на новый ярлык
-    local old_desktop="$HOME/.local/share/applications/asus-helper.desktop"
-    if [ -e "$old_desktop" ] || [ -L "$old_desktop" ]; then
-        ln -sf /usr/local/share/applications/asus-helper.desktop "$old_desktop"
-    fi
     true
 }
 step "$(L "Остатки прежних версий убраны" "Leftovers of older versions removed")" cleanup_old

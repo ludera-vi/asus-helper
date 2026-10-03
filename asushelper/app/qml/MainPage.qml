@@ -23,6 +23,7 @@ ColumnLayout {
     readonly property var nv: backend.nvidia || {}
     readonly property var toggles: st.toggles || {}
     readonly property var sl: st.slash || {}
+    readonly property string dgpu: gpu.dgpu_name || "NVIDIA"     // имя дискретной видеокарты из системы
 
     spacing: Kirigami.Units.largeSpacing * 1.5
 
@@ -48,6 +49,9 @@ ColumnLayout {
                 }
             }
             Tile {
+                // есть что настраивать: свои кривые или лимиты мощности с диапазоном
+                visible: !!page.st.fan_curves
+                         || Object.values(page.st.power_limits || {}).some(l => l.min !== null && l.max !== null && l.max > l.min)
                 text: Theme.tr("Вентиляторы")
                 subtitle: Theme.tr("и мощность")
                 iconName: Qt.resolvedUrl("icons/fan-symbolic.svg")
@@ -85,9 +89,9 @@ ColumnLayout {
              : page.gpu.state === "off" ? "Eco" : Theme.tr("Стандарт")
         iconName: Qt.resolvedUrl("icons/gpu-symbolic.svg")
         info: (page.gpu.auto_eco && !page.gpu.switching
-               ? (page.gpu.auto_waiting ? Theme.tr("без сети — ") + (page.gpu.dgpu_name || "NVIDIA") + Theme.tr(" занята, выключится, когда освободится")
-                  : page.gpu.state === "off" ? Theme.tr("без сети — ") + (page.gpu.dgpu_name || "NVIDIA") + Theme.tr(" отключена")
-                                           : Theme.tr("от сети — ") + (page.gpu.dgpu_name || "NVIDIA") + Theme.tr(" включена"))
+               ? (page.gpu.auto_waiting ? Theme.tr("без сети — %1 занята, выключится, когда освободится").arg(page.dgpu)
+                  : page.gpu.state === "off" ? Theme.tr("без сети — %1 отключена").arg(page.dgpu)
+                                           : Theme.tr("от сети — %1 включена").arg(page.dgpu))
                : Theme.gpuInfo(page.gpu, page.nv))
               + (page.fans.gpu == null ? "" : page.fans.gpu === 0 ? Theme.tr("  ·  вентилятор стоит") : "  ·  " + page.fans.gpu + Theme.tr(" об/мин"))
         infoColor: page.gpu.state === "active" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor
@@ -96,7 +100,7 @@ ColumnLayout {
             spacing: Kirigami.Units.smallSpacing
             Tile {
                 text: "Eco"
-                subtitle: Theme.tr("NVIDIA выключена")
+                subtitle: Theme.tr("%1 выключена").arg(page.dgpu)
                 iconName: "battery-profile-powersave-symbolic"
                 accent: Theme.positive
                 selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "eco" : page.gpu.state === "off")
@@ -106,7 +110,7 @@ ColumnLayout {
             }
             Tile {
                 text: Theme.tr("Стандарт")
-                subtitle: "iGPU + NVIDIA"
+                subtitle: (page.gpu.igpu_name || "iGPU") + " + " + page.dgpu
                 iconName: "monitor-symbolic"
                 accent: Theme.highlight
                 selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "standard" : page.gpu.state !== "off")
@@ -119,8 +123,8 @@ ColumnLayout {
                 // что работает прямо сейчас
                 subtitle: page.gpu.switching ? Theme.tr("переключается…")
                         : page.gpu.auto_eco && page.gpu.auto_waiting ? Theme.tr("ждёт: ") + page.gpu.auto_waiting.join(", ")
-                        : page.gpu.state === "off" ? Theme.tr("работает ") + (page.gpu.igpu_name || Theme.tr("встроенная"))
-                        : Theme.tr("включена ") + (page.gpu.dgpu_name || "NVIDIA")
+                        : page.gpu.state === "off" ? Theme.tr("работает %1").arg(page.gpu.igpu_name || Theme.tr("встроенная"))
+                        : Theme.tr("включена %1").arg(page.dgpu)
                 iconName: "automated-tasks-symbolic"
                 accent: Theme.neutral
                 selected: !!page.gpu.auto_eco
@@ -128,10 +132,18 @@ ColumnLayout {
                 onClicked: backend.setGpuAutoEco(true)
                 QQC2.ToolTip.visible: hovered
                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                QQC2.ToolTip.text: Theme.tr("Отключил зарядку — NVIDIA выключается (Eco), батарея живёт дольше.\nПодключил — NVIDIA включается для игр и тяжёлых программ.")
+                QQC2.ToolTip.text: Theme.tr("Отключил зарядку — %1 выключается (Eco), батарея живёт дольше.\nПодключил — %1 включается для игр и тяжёлых программ.").arg(page.dgpu)
             }
         }
 
+        QQC2.Label {
+            Layout.fillWidth: true
+            visible: text !== ""
+            text: [page.gpu.igpu_model, page.gpu.dgpu_model].filter(m => !!m).join("  ·  ")
+            font: Kirigami.Theme.smallFont
+            opacity: 0.55
+            elide: Text.ElideRight
+        }
         Kirigami.InlineMessage {
             Layout.fillWidth: true
             visible: !!page.gpu.error && !page.gpu.switching
@@ -150,7 +162,7 @@ ColumnLayout {
         QQC2.Label {
             Layout.fillWidth: true
             visible: !page.gpu.error && (page.gpu.holders || []).length > 0
-            text: Theme.tr("Держат NVIDIA: ") + (page.gpu.holders || []).join(", ")
+            text: Theme.tr("Держат %1: ").arg(page.dgpu) + (page.gpu.holders || []).join(", ")
             font: Kirigami.Theme.smallFont
             opacity: 0.7
             elide: Text.ElideRight
@@ -313,6 +325,7 @@ ColumnLayout {
 
         RowLayout {
             Layout.fillWidth: true
+            visible: page.bat.charge_limit !== null && page.bat.charge_limit !== undefined   // ядро умеет ограничивать заряд
             spacing: Kirigami.Units.largeSpacing
             QQC2.Label { text: Theme.tr("Заряжать до") }
             QQC2.Slider {
@@ -392,7 +405,7 @@ ColumnLayout {
             QQC2.Label {
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
-                text: Theme.tr("Монитор (") + (page.gpu.external || []).join(", ") + Theme.tr(") подключён к видеокарте NVIDIA. ")
+                text: Theme.tr("Монитор (%1) подключён к видеокарте %2. ").arg((page.gpu.external || []).join(", ")).arg(page.dgpu)
                       + Theme.tr("Если её выключить, он погаснет — изображение останется только на экране ноутбука.")
             }
             RowLayout {

@@ -279,6 +279,16 @@ def cmd_boost(cl, args):
     cl.call("SetCpuBoost", "sb", args[0], args[1] == "on")
 
 
+def _remembered_dgpu():
+    """Название дискретной видеокарты, которое демон запомнил, пока она была включена."""
+    try:
+        with open("/etc/asus-helper/config.json") as f:
+            d = (json.load(f).get("gpu") or {}).get("dgpu") or {}
+        return d.get("model") and d["model"] + (" — " + _("выключена (Eco)") if d else "")
+    except (OSError, ValueError):
+        return None
+
+
 def cmd_diag(_cl, _args):
     """Отчёт о возможностях ноутбука — читает железо напрямую, root и демон не нужны."""
     import os
@@ -296,6 +306,15 @@ def cmd_diag(_cl, _args):
     print(_("Лимиты мощности: ").format() + (", ".join(f"{a} {v['min']}–{v['max']}" for a, v in lim.items()) or _("нет")))
     print(_("Переключатели  : ").format() + (", ".join(a for a in hw.TOGGLE_ATTRS if hw.armoury_attr(a)) or _("нет")))
     print(_("Видеокарта     : {0}{1}").format(_('Eco поддерживается') if gpu.supported() else _('нет NVIDIA / нет dgpu_disable'), '' if gpu.mux_hybrid() else _(', MUX: только NVIDIA')))
+    cards = gpu.display_gpus()
+    print(_("Видеокарты     : встроенная {0}; дискретная {1}").format(
+        (cards["igpu"] or {}).get("model") or _("нет"),
+        (cards["dgpu"] or {}).get("model") or _remembered_dgpu() or (_("выключена (Eco)") if gpu.bios_off() else _("нет"))))
+    try:
+        from .app.hotkey import rog_key
+        print(_("Клавиша окна   : {0}").format(_("ROG (Launch 1)") if rog_key() else _("нет — назначается в настройках KDE")))
+    except ImportError:
+        pass
     b = aura.brightness()
     print(_("Подсветка клав.: яркость {0}, цвет: {1}").format('0–' + str(b['max']) if b else _('нет'), aura.rgb_method() or _('нет')))
     sl = slash.find_device()

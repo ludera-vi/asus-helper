@@ -9,6 +9,7 @@ nvidia-powerd/persistenced → выгрузить драйвер → убрат�
 и ядро ждёт её по 65 с при каждом выходе из сна. fixup() убирает её с шины.
 """
 import fcntl
+import functools
 import logging
 import os
 import signal
@@ -76,6 +77,47 @@ def mux_hybrid() -> bool:
 
 
 VENDORS = {"0x10de": "NVIDIA", "0x1002": "AMD", "0x8086": "Intel"}
+PCI_IDS = ("/usr/share/hwdata/pci.ids", "/usr/share/misc/pci.ids")
+
+
+@functools.lru_cache(maxsize=16)
+def pci_model(vendor: str, device: str) -> str | None:
+    """Название из базы pci.ids: «GeForce RTX 4080 Max-Q / Mobile», «Intel Arc Graphics»…"""
+    v, d = vendor.replace("0x", "").lower(), device.replace("0x", "").lower()
+    for path in PCI_IDS:
+        try:
+            with open(sysfs.path(path), encoding="utf-8", errors="replace") as f:
+                in_vendor = False
+                for line in f:
+                    if line.startswith("#") or not line.strip():
+                        continue
+                    if not line.startswith("\t"):
+                        in_vendor = line[:4].lower() == v
+                    elif in_vendor and not line.startswith("\t\t") and line[1:5].lower() == d:
+                        name = line[5:].strip()
+                        # «AD104M [GeForce RTX 4080 Max-Q / Mobile]» → то, что в скобках
+                        return name[name.index("[") + 1:name.rindex("]")] if "[" in name and "]" in name else name
+        except OSError:
+            continue
+    return None
+
+
+def display_gpus() -> dict:
+    """{"igpu": {vendor, model}, "dgpu": {vendor, model} | None} — видеокарты на шине PCI сейчас."""
+    out = {"igpu": None, "dgpu": None}
+    for d in sysfs.find(PCI + "/*"):
+        if not (sysfs.read(d + "/class") or "").startswith("0x03"):
+            continue
+        vendor, device = sysfs.read(d + "/vendor") or "", sysfs.read(d + "/device") or ""
+        name = VENDORS.get(vendor, vendor)
+        model = pci_model(vendor, device) or ""
+        # «Intel Arc Graphics» — как есть; «Phoenix1» → «AMD Phoenix1»; «GeForce RTX 4080» → «NVIDIA GeForce…»
+        full = model if name.lower() in model.lower() else f"{name} {model}".strip()
+        info = {"vendor": name, "model": full}
+        key = "igpu" if sysfs.read(d + "/boot_vga") == "1" else "dgpu"
+        if out[key] is None:
+            out[key] = info
+    return out
 
 
 def igpu_name() -> str:

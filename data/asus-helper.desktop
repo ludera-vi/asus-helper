@@ -11,5 +11,3 @@ Terminal=false
 Categories=Settings;HardwareSettings;
 Keywords=asus;rog;tuf;fan;gpu;nvidia;aura;slash;battery;вентилятор;видеокарта;подсветка;батарея;
 StartupNotify=false
-# ROG key above the keyboard (KEY_PROG1 → Launch (1)) opens the window; change it in System Settings → Shortcuts
-X-KDE-Shortcuts=Launch (1)

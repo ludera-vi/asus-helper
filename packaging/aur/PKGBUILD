@@ -6,7 +6,7 @@ pkgdesc="ASUS ROG/TUF laptop control for KDE Plasma: performance modes, fan curv
 arch=('any')
 url="https://github.com/ludera-vi/asus-helper"
 license=('GPL-3.0-or-later')
-depends=('python' 'python-gobject' 'pyside6' 'polkit' 'systemd' 'libkscreen'
+depends=('python' 'python-gobject' 'pyside6' 'polkit' 'systemd' 'libkscreen' 'hwdata'
          'kirigami' 'qqc2-desktop-style' 'layer-shell-qt')
 makedepends=('make')
 optdepends=('nvidia-utils: NVIDIA load, power and temperature in the window'

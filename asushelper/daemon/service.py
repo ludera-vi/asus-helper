@@ -172,6 +172,13 @@ class Service:
             return dict(self._gpu_cache, switching=True, target=self.gpu.target, auto_waiting=None,
                         auto_eco=self.config.data["gpu"]["auto_eco"], error=None, can_force=False)
         supported = gpu.supported()
+        cards = gpu.display_gpus()
+        g = self.config.data["gpu"]
+        if cards["dgpu"] and g.get("dgpu") != cards["dgpu"]:
+            g["dgpu"] = cards["dgpu"]          # запомнить: в Eco карты на шине нет, а название нужно
+            self.config.save()
+        dgpu = cards["dgpu"] or g.get("dgpu") or {}
+        igpu = cards["igpu"] or {}
         self._gpu_cache = {
             "supported": supported,
             "state": gpu.state() if supported else None,
@@ -182,9 +189,11 @@ class Service:
             "error": self.gpu.last_error,
             "can_force": self.gpu.can_force and self.gpu.last_error is not None,
             "external": gpu.external_displays() if supported and not gpu.bios_off() else [],
-            "dgpu_name": "NVIDIA",
+            "dgpu_name": dgpu.get("vendor") or "NVIDIA",
+            "dgpu_model": dgpu.get("model"),
+            "igpu_model": igpu.get("model"),
             "auto_waiting": self.auto_waiting,
-            "igpu_name": gpu.igpu_name(),
+            "igpu_name": igpu.get("vendor") or gpu.igpu_name(),
         }
         return self._gpu_cache
 

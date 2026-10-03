@@ -13,12 +13,19 @@ def _run(args: list[str], done) -> None:
     p = QProcess()
 
     def finished(code, _status):
-        done(code, bytes(p.readAllStandardOutput()).decode(), bytes(p.readAllStandardError()).decode())
-        p.deleteLater()
+        out, err = bytes(p.readAllStandardOutput()).decode(), bytes(p.readAllStandardError()).decode()
+        _run.alive.discard(p)
+        done(code, out, err)
+
+    def failed(_error):
+        # kscreen-doctor не запустился: finished не придёт
+        if p.state() == QProcess.NotRunning and p in _run.alive:
+            _run.alive.discard(p)
+            done(-1, "", p.errorString())
     p.finished.connect(finished)
-    p.start("kscreen-doctor", args)
+    p.errorOccurred.connect(failed)
     _run.alive.add(p)           # QProcess без родителя — держим ссылку, пока работает
-    p.finished.connect(lambda *_: _run.alive.discard(p))
+    p.start("kscreen-doctor", args)
 
 
 _run.alive = set()

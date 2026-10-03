@@ -51,15 +51,16 @@ Item {
 
     function gpuInfo(gpu, nv) {
         if (!gpu || !gpu.state) return ""
-        if (gpu.switching) return gpu.target === "eco" ? tr("выключаю NVIDIA…") : tr("включаю NVIDIA…")
+        const d = gpu.dgpu_name || "NVIDIA"
+        if (gpu.switching) return (gpu.target === "eco" ? tr("выключаю %1…") : tr("включаю %1…")).arg(d)
         switch (gpu.state) {
-        case "off": return tr("NVIDIA выключена")
-        case "suspended": return tr("NVIDIA спит")
+        case "off": return tr("%1 выключена").arg(d)
+        case "suspended": return tr("%1 спит").arg(d)
         case "active":
             return nv && nv.load !== undefined
-                ? "NVIDIA " + nv.load + "% · " + Math.round(nv.power) + tr(" Вт · ") + nv.temp + " °C"
-                : (gpu.holders || []).length ? tr("NVIDIA работает") : tr("NVIDIA включена")
-        case "missing": return tr("NVIDIA без драйвера")
+                ? d + " " + nv.load + "% · " + Math.round(nv.power) + tr(" Вт · ") + nv.temp + " °C"
+                : ((gpu.holders || []).length ? tr("%1 работает") : tr("%1 включена")).arg(d)
+        case "missing": return tr("%1 без драйвера").arg(d)
         default: return gpu.state
         }
     }

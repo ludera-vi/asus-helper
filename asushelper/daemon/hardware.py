@@ -57,6 +57,8 @@ def epp_choices() -> list[str]:
 
 
 def set_epp(value: str) -> bool:
+    if not epp_choices():
+        return False              # драйвер процессора без EPP (acpi-cpufreq и т. п.) — молча пропускаем
     if value not in epp_choices():
         log.warning(_("EPP «%s» не поддерживается (есть: %s)"), value, epp_choices())
         return False

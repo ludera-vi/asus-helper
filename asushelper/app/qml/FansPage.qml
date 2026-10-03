@@ -255,6 +255,7 @@ ColumnLayout {
 
         RowLayout {
             Layout.fillWidth: true
+            visible: (page.st.epp_choices || []).length > 0     // процессор поддерживает EPP
             QQC2.Label { text: Theme.tr("Энергосбережение CPU (EPP)"); Layout.fillWidth: true }
             QQC2.ComboBox {
                 id: epp

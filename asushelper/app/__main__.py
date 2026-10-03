@@ -211,6 +211,10 @@ def main() -> int:
                             lambda *a: (tray.toggle(), a[-1].return_value(None)), None, None)
     Gio.bus_own_name_on_connection(session, APP_BUS_NAME, Gio.BusNameOwnerFlags.NONE, None, None)
 
+    # клавиша ROG (или назначенная в настройках KDE) открывает окно
+    from .hotkey import GlobalShortcut
+    app.shortcut = GlobalShortcut(session, tray.toggle)
+
     if args.show:
         tray.toggle()
         if args.page != "main":

@@ -13,6 +13,7 @@ pkgbase = asus-helper
 	depends = polkit
 	depends = systemd
 	depends = libkscreen
+	depends = hwdata
 	depends = kirigami
 	depends = qqc2-desktop-style
 	depends = layer-shell-qt
