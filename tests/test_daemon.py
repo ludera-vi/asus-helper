@@ -559,3 +559,15 @@ class KeyboardIdleTest(unittest.TestCase):
 
     def test_device_filter(self):
         self.assertIsInstance(self.idle_mod._activity_devices(), list)
+
+
+class InputActivityTest(unittest.TestCase):
+    def test_only_human_actions_count(self):
+        from asushelper.daemon.idle import EVENT, is_activity
+        ev = lambda t, c, v: EVENT.pack(0, 0, t, c, v)
+        self.assertFalse(is_activity(ev(0, 0, 0) + ev(4, 4, 30)))          # SYN и скан-код
+        self.assertFalse(is_activity(ev(1, 30, 0)))                         # отпускание клавиши
+        self.assertFalse(is_activity(ev(2, 0, 0)))                          # «движение» на 0
+        self.assertTrue(is_activity(ev(4, 4, 30) + ev(1, 30, 1)))          # нажатие A
+        self.assertTrue(is_activity(ev(2, 1, -3)))                          # мышь сдвинулась
+        self.assertTrue(is_activity(ev(3, 53, 812)))                        # касание тачпада
