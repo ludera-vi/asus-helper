@@ -403,27 +403,16 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
     log.info(_("NVIDIA выключена (Eco)"))
 
 
-def turn_on(on_ready=None) -> None:
-    """Стандарт. on_ready() — карта уже работает, хотя BIOS ещё не ответил на команду."""
+def turn_on() -> None:
     if not bios_off() and find_gpu():
         return
     fixup()   # «призрак» помешал бы найти карту заново
     _settle()
     log.info(_("включаю NVIDIA в BIOS"))
     _mark()
-    # BIOS подключает карту к шине почти сразу, а на саму команду отвечает через 6–8 с. Как только карта на
-    # шине и ядро привязало к ней драйвер, она работает — об этом сообщаем раньше, BIOS дожидаемся в фоне.
-    result = {}
-    writer = threading.Thread(target=lambda: result.update(ok=sysfs.write(_attr("dgpu_disable"), 0)), daemon=True)
-    writer.start()
-    announced = False
-    while writer.is_alive():
-        writer.join(0.25)
-        if on_ready and not announced and (g := find_gpu()) and sysfs.exists(f"{PCI}/{g}/driver"):
-            log.info(_("NVIDIA уже работает, BIOS завершает включение"))
-            on_ready()
-            announced = True
-    if not result.get("ok"):
+    # BIOS отвечает на команду через 6–8 с (карту на шину он подключает раньше). Включённой считаем,
+    # только когда BIOS ответил: до этого любое обращение к нему ждало бы своей очереди.
+    if not sysfs.write(_attr("dgpu_disable"), 0):
         raise GpuError(_("BIOS отказал во включении"))
     for _attempt in range(10):
         if find_gpu():
@@ -442,12 +431,9 @@ def turn_on(on_ready=None) -> None:
 class Switcher:
     """Переключение в отдельном потоке: главный цикл демона не ждёт modprobe и шину PCI."""
 
-    def __init__(self, on_done, on_ready=None):
+    def __init__(self, on_done):
         self.on_done = on_done      # on_done(error: str | None) — вызывается в главном потоке
-        self.on_ready = on_ready    # карта уже работает, переключение дозавершается — тоже в главном потоке
         self.busy = False
-        self.ready = False          # включение: карта работает, BIOS ещё не ответил
-        self.pending: tuple | None = None   # запрошено, пока дозавершалось предыдущее
         self.target: str | None = None
         self._error: str | None = None
         self._error_at = 0.0
@@ -469,7 +455,6 @@ class Switcher:
         if self.busy:
             return False
         self.busy = True
-        self.ready = False
         self.target = "eco" if want_off else "standard"
         self.last_error = None
         self.can_force = False
@@ -488,7 +473,7 @@ class Switcher:
                     raise GpuError(_("видеокарту уже переключает другая программа (gpu-eco?)"))
                 guard = None if sysfs.ROOT else HotkeyGuard.acquire()
                 try:
-                    (turn_off(force, ignore_displays) if want_off else turn_on(self._announce_ready))
+                    (turn_off(force, ignore_displays) if want_off else turn_on())
                 finally:
                     if guard:
                         guard.release_later()
@@ -502,27 +487,11 @@ class Switcher:
 
         def done():
             self.busy = False
-            self.ready = False
             self.last_error = err
             self.can_force = can_force
             self.on_done(err)
-            if self.pending:
-                args, self.pending = self.pending, None
-                self.start(*args)
-                if self.on_ready:
-                    self.on_ready()             # «переключается» — сразу в окне
             return GLib.SOURCE_REMOVE
         GLib.idle_add(done)
-
-    def _announce_ready(self) -> None:
-        from gi.repository import GLib
-
-        def mark():
-            self.ready = True
-            if self.on_ready:
-                self.on_ready()
-            return GLib.SOURCE_REMOVE
-        GLib.idle_add(mark)
 
 
 # ---------- рабочий стол только на встроенной видеокарте ----------

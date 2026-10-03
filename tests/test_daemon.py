@@ -537,20 +537,6 @@ class AutoEcoTest(unittest.TestCase):
         self.s._gpu_done(None)
         self.assertEqual(self.started, [True])              # после переключения — Eco
 
-    def test_ready_card_reported_on_and_next_request_queued(self):
-        self.s.state()
-        self.s.gpu.busy, self.s.gpu.ready = True, True      # карта работает, BIOS ещё отвечает
-        try:
-            g = self.s.state()["gpu"]
-            self.assertFalse(g["switching"])
-            self.assertEqual(g["state"], "active")
-            self.s.do_SetGpuModeFlags("eco", 0)              # не ошибка — в очередь
-            self.assertEqual(self.s.gpu.pending, (True, False, False))
-            self.assertEqual(self.started, [])
-        finally:
-            self.s.gpu.busy = self.s.gpu.ready = False
-            self.s.gpu.pending = None
-
     def test_stuck_driver_blocks_switching(self):
         class Hung:
             def poll(self):
