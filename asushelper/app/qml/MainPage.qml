@@ -105,7 +105,7 @@ ColumnLayout {
                 accent: Theme.positive
                 selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "eco" : page.gpu.state === "off")
                 busy: !!page.gpu.switching && page.gpu.target === "eco"
-                enabled: !page.gpu.switching && !!page.gpu.mux_hybrid
+                enabled: !page.gpu.switching && !page.gpu.stuck && !!page.gpu.mux_hybrid
                 onClicked: (page.gpu.external || []).length ? displayWarning.open() : backend.setGpuMode("eco", false)
             }
             Tile {
@@ -115,7 +115,7 @@ ColumnLayout {
                 accent: Theme.highlight
                 selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "standard" : page.gpu.state !== "off")
                 busy: !!page.gpu.switching && page.gpu.target === "standard"
-                enabled: !page.gpu.switching
+                enabled: !page.gpu.switching && !page.gpu.stuck
                 onClicked: backend.setGpuMode("standard", false)
             }
             Tile {
@@ -128,7 +128,7 @@ ColumnLayout {
                 iconName: "automated-tasks-symbolic"
                 accent: Theme.neutral
                 selected: !!page.gpu.auto_eco
-                enabled: !page.gpu.switching && !!page.gpu.mux_hybrid
+                enabled: !page.gpu.switching && !page.gpu.stuck && !!page.gpu.mux_hybrid
                 onClicked: backend.setGpuAutoEco(true)
                 QQC2.ToolTip.visible: hovered
                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay

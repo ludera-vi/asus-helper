@@ -388,5 +388,8 @@
  "язык → %s, перезапускаю демон": "language → %s, restarting the daemon",
  "язык: {0}": "language: {0}",
  "яркость 0–3, пауза 0–5": "brightness 0–3, pause 0–5",
- "яркость {0}/3, {1}, пауза {2} с, на батарее: {3}, с закрытой крышкой: {4}": "brightness {0}/3, {1}, pause {2} s, on battery: {3}, lid closed: {4}"
+ "яркость {0}/3, {1}, пауза {2} с, на батарее: {3}, с закрытой крышкой: {4}": "brightness {0}/3, {1}, pause {2} s, on battery: {3}, lid closed: {4}",
+ "выгрузка драйвера NVIDIA зависла в ядре (%s с)": "NVIDIA driver unload hung in the kernel (%s s)",
+ "драйвер NVIDIA завис при выгрузке (ошибка в ядре или драйвере). Нужна перезагрузка; до неё видеокарту не переключаю": "The NVIDIA driver hung while unloading (a kernel or driver bug). A reboot is needed; until then the GPU won't be switched",
+ "драйвер NVIDIA загружен только что — жду %d с": "the NVIDIA driver was just loaded — waiting %d s"
 }

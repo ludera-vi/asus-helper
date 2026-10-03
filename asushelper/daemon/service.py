@@ -134,31 +134,41 @@ class Service:
         # Пока BIOS включает или выключает NVIDIA (до ~10 с), любое другое обращение к BIOS (WMI) ждёт
         # своей очереди — и демон перестал бы отвечать. Отдаём последнее состояние, меняем только видеокарту.
         if self.gpu.busy and self._state_cache:
-            return dict(self._state_cache, gpu=self._gpu_state(), profile=self.modes.current)
+            # из кэша — только то, что читается через BIOS; настройки, процессор, Slash — как есть сейчас
+            st = dict(self._state_cache, **self._live_state(), gpu=self._gpu_state())
+            if kbd := st.get("keyboard"):
+                st["keyboard"] = {**kbd, **self.config.data["keyboard"]}   # яркость — последняя заданная
+            return st
         self._state_cache = self._read_state()
         return self._state_cache
 
-    def _read_state(self) -> dict:
+    def _live_state(self) -> dict:
+        """Части состояния, которые не обращаются к BIOS (WMI) и шине PCI — их можно читать всегда."""
         return {
-            "version": __version__,
-            "model": hw.model(),
             "profile": self.modes.current,
-            "profiles": [p for p in PROFILES if p in hw.profile_choices()],
             "ac": self.modes.ac,
             "auto_profile": self.config.data["auto_profile"],
             "profile_on_ac": self.config.data["profile_on_ac"],
             "profile_on_battery": self.config.data["profile_on_battery"],
             "epp": hw.epp(),
             "epp_choices": hw.epp_choices(),
-            "fans": hw.fan_rpm(),
-            "fan_curves": {f: hw.fan_curve(f) for f in hw.curve_fans()} or None,
             "cpu_temp": hw.cpu_temp(),
-            "battery": hw.battery(),
-            "power_limits": hw.power_limits(),
-            "toggles": {a: v["value"] == 1 for a in hw.TOGGLE_ATTRS if (v := hw.armoury_attr(a))},
             "cpu_boost": hw.turbo(),
             "slash": {**self.config.data["slash"], "supported": slash.supported(),
                       "modes": [{"id": k, "name": v[1]} for k, v in slash.MODES.items()]},
+        }
+
+    def _read_state(self) -> dict:
+        return {
+            "version": __version__,
+            "model": hw.model(),
+            "profiles": [p for p in PROFILES if p in hw.profile_choices()],
+            **self._live_state(),
+            "fans": hw.fan_rpm(),
+            "fan_curves": {f: hw.fan_curve(f) for f in hw.curve_fans()} or None,
+            "battery": hw.battery(),
+            "power_limits": hw.power_limits(),
+            "toggles": {a: v["value"] == 1 for a in hw.TOGGLE_ATTRS if (v := hw.armoury_attr(a))},
             "gpu": self._gpu_state(),
             "keyboard": {**self.config.data["keyboard"], "rgb": aura.rgb_method(),
                          **({"brightness": b["value"], "max": b["max"]} if (b := aura.brightness()) else {})}
@@ -186,7 +196,8 @@ class Service:
             "auto_eco": self.config.data["gpu"]["auto_eco"],
             "switching": False,
             "target": None,
-            "error": self.gpu.last_error,
+            "error": STUCK_MSG() if gpu.is_stuck() else self.gpu.last_error,
+            "stuck": gpu.is_stuck(),
             "can_force": self.gpu.can_force and self.gpu.last_error is not None,
             "external": gpu.external_displays() if supported and not gpu.bios_off() else [],
             "dgpu_name": dgpu.get("vendor") or "NVIDIA",
@@ -258,7 +269,7 @@ class Service:
         не выключаем — ждём, пока освободится, и проверяем раз в 10 с. Возвращает, нужна ли проверка ещё."""
         waiting_before = self.auto_waiting
         self.auto_waiting = None
-        if not (self.config.data["gpu"]["auto_eco"] and gpu.supported()) or self.gpu.busy:
+        if not (self.config.data["gpu"]["auto_eco"] and gpu.supported()) or self.gpu.busy or gpu.is_stuck():
             return self._auto_changed(waiting_before)
         want_off = not self.modes.ac
         if not want_off:
@@ -466,6 +477,8 @@ class Service:
             raise Failed(_("режим видеокарты: eco или standard"))
         if self.gpu.busy:
             raise Failed(_("видеокарта уже переключается"))
+        if gpu.is_stuck():
+            raise Failed(STUCK_MSG())
         if mode == "eco" and not gpu.mux_hybrid():
             raise Failed(_("MUX в режиме «только NVIDIA» — выключать её нельзя"))
         if self.config.data["gpu"]["auto_eco"]:
@@ -590,6 +603,11 @@ class Service:
             self.modes.reapply(_("изменены настройки режима {0}").format(profile))
         else:
             self._changed()
+
+
+def STUCK_MSG() -> str:
+    return _("драйвер NVIDIA завис при выгрузке (ошибка в ядре или драйвере). Нужна перезагрузка; "
+             "до неё видеокарту не переключаю")
 
 
 def sysfs_path(p: str) -> str:

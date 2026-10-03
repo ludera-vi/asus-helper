@@ -243,6 +243,39 @@ def _run(*cmd) -> bool:
     return r.returncode == 0
 
 
+# Выгрузка драйвера может навсегда застрять в ядре (процесс в состоянии D: драйвер ждёт событий ACPI,
+# которые ядро так и не обработало). Убить такой процесс нельзя, ждать его — тоже: демон вечно
+# «переключался» бы. Ждём разумное время, дальше — ошибка, а новые переключения до перезагрузки не начинаем.
+UNLOAD_TIMEOUT = 60
+stuck: subprocess.Popen | None = None
+
+
+def is_stuck() -> bool:
+    return stuck is not None and stuck.poll() is None
+
+
+def _unload_driver() -> bool:
+    global stuck
+    cmd = ["modprobe", "-r", *MODULES_UNLOAD]
+    p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    try:
+        p.wait(UNLOAD_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        stuck = p
+        log.error(_("выгрузка драйвера NVIDIA зависла в ядре (%s с)"), UNLOAD_TIMEOUT)
+        raise GpuError(_("драйвер NVIDIA завис при выгрузке (ошибка в ядре или драйвере). Нужна перезагрузка; "
+                         "до неё видеокарту не переключаю"))
+    if p.returncode != 0:
+        log.warning("%s: %s", " ".join(cmd), p.stderr.read().strip())
+    return p.returncode == 0
+
+
+# Драйвер, только что загруженный, ещё запускает видеокарту (прошивку GSP) — выгружать его в этот момент
+# опасно. Между включением и выключением выдерживаем паузу.
+SETTLE_S = 20
+_loaded_at = 0.0
+
+
 def _start_services() -> None:
     for s in SERVICES:
         if subprocess.run(["systemctl", "is-enabled", "-q", s]).returncode == 0:
@@ -252,6 +285,8 @@ def _start_services() -> None:
 
 
 def _load_driver() -> bool:
+    global _loaded_at
+    _loaded_at = time.monotonic()
     return _run("modprobe", "-a", *MODULES_LOAD)
 
 
@@ -309,8 +344,11 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
 
         log.info(_("останавливаю сервисы NVIDIA"))
         subprocess.run(["systemctl", "stop", *SERVICES], capture_output=True)
+        if (wait := _loaded_at + SETTLE_S - time.monotonic()) > 0:
+            log.info(_("драйвер NVIDIA загружен только что — жду %d с"), wait)
+            time.sleep(wait)
         log.info(_("выгружаю драйвер NVIDIA"))
-        if not _run("modprobe", "-r", *MODULES_UNLOAD):
+        if not _unload_driver():
             _load_driver()
             _start_services()
             raise GpuError(_("драйвер не выгрузился (что-то ещё использует карту) — всё возвращено как было"))

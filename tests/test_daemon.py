@@ -526,6 +526,36 @@ class AutoEcoTest(unittest.TestCase):
         self.assertEqual(self.started, [])                  # карта и так включена
 
 
+    def test_stuck_driver_blocks_switching(self):
+        class Hung:
+            def poll(self):
+                return None
+        self.gpu.stuck = Hung()
+        try:
+            self.assertFalse(self.s._auto_eco())
+            self.assertEqual(self.started, [])                  # «Авто» не трогает
+            with self.assertRaises(self.svc.Failed):
+                self.s.do_SetGpuModeFlags("standard", 0)
+            g = self.s.state()["gpu"]
+            self.assertTrue(g["stuck"])
+            self.assertIn("перезагрузка", g["error"])
+        finally:
+            self.gpu.stuck = None
+
+    def test_settings_visible_while_switching(self):
+        self.s.state()                                      # кэш до переключения
+        self.s.gpu.busy = True
+        try:
+            self.s.config.data["slash"]["brightness"] = 3
+            self.s.config.data["keyboard"]["brightness"] = 1
+            st = self.s.state()
+            self.assertEqual(st["slash"]["brightness"], 3)
+            self.assertEqual(st["keyboard"]["brightness"], 1)
+            self.assertTrue(st["gpu"]["switching"])
+        finally:
+            self.s.gpu.busy = False
+
+
 class KeyboardIdleTest(unittest.TestCase):
     def setUp(self):
         fakesys.build(ROOT)

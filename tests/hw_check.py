@@ -301,7 +301,7 @@ def test_gpu(s0, c0):
         t0 = time.time()
         call("SetGpuModeFlags", "su", mode, 0)
         first = None
-        end = t0 + 40
+        end = t0 + 120     # с паузой после загрузки драйвера (SETTLE_S) и включением в BIOS
         while time.time() < end:
             ctx.iteration(False)
             if first is None and any(g["switching"] for _, g in signals):
@@ -312,6 +312,15 @@ def test_gpu(s0, c0):
         g = state()["gpu"]
         return first, g
 
+    def wait_idle():
+        end = time.time() + 120
+        while state()["gpu"]["switching"] and time.time() < end:
+            time.sleep(1)
+
+    if state()["gpu"].get("stuck"):
+        check("видеокарта переключается (драйвер не завис)", False, state()["gpu"]["error"])
+        return
+    wait_idle()
     osd_before = osd_count()
     seq = ["eco", "standard"] if s0["gpu"]["state"] != "off" else ["standard", "eco"]
     for mode in seq + seq:
@@ -327,11 +336,13 @@ def test_gpu(s0, c0):
     call("SetGpuAutoEco", "b", True)
     check("«Авто» включается", config()["gpu"]["auto_eco"])
     call("SetGpuAutoEco", "b", False)
+    wait_idle()           # «Авто» на батарее сразу начинает выключать NVIDIA — дождаться
     # вернуть как было
     if (state()["gpu"]["state"] == "off") != (s0["gpu"]["state"] == "off"):
         switch("eco" if s0["gpu"]["state"] == "off" else "standard")
     if s0["gpu"]["auto_eco"]:
         call("SetGpuAutoEco", "b", True)
+        wait_idle()
     bus.signal_unsubscribe(sub)
 
 
