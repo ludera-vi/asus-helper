@@ -474,3 +474,53 @@ class FactoryCurvesTest(unittest.TestCase):
         self.assertEqual(fakesys.read(ROOT, CURVE + "/pwm1_enable"), "2")    # в Балансе — BIOS
         self.assertIsNone(self.cfg.data["profiles"]["balanced"]["fan_curves"]["cpu"])
         self.assertIsNone(self.cfg.data["profiles"]["performance"]["fan_curves"]["cpu"])
+
+
+class AutoEcoTest(unittest.TestCase):
+    """«Авто»: без сети NVIDIA выключается, но не пока её занимают программы."""
+
+    def setUp(self):
+        fakesys.build(ROOT)
+        from gi.repository import Gio
+        from asushelper.daemon import gpu, service as svc
+        d = "/sys/bus/pci/devices/0000:01:00.0"
+        fakesys._w(ROOT, d + "/vendor", "0x10de")
+        fakesys._w(ROOT, d + "/class", "0x030000")
+        fakesys._w(ROOT, "/sys/class/firmware-attributes/asus-armoury/attributes/dgpu_disable/current_value", 0)
+        self.gpu, self.svc = gpu, svc
+        self.saved = gpu.holders
+        cfg = Config(os.path.join(CONF, "auto.json"))
+        cfg.data["gpu"]["auto_eco"] = True
+        # своё подключение к шине на каждый тест: один объект — одна регистрация
+        addr = Gio.dbus_address_get_for_bus_sync(Gio.BusType.SESSION, None)
+        bus = Gio.DBusConnection.new_for_address_sync(
+            addr, Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,
+            None, None)
+        self.s = svc.Service(bus, cfg)
+        self.started = []
+        self.s.gpu.start = lambda want_off, *a: self.started.append(want_off) or True
+        self.s.modes.ac = False
+
+    def tearDown(self):
+        self.gpu.holders = self.saved
+        if self.s._auto_timer:
+            GLib.source_remove(self.s._auto_timer)
+
+    def test_waits_while_busy_then_turns_off(self):
+        self.gpu.holders = lambda gpu=None: [(4242, "resolve")]
+        self.assertTrue(self.s._auto_eco())
+        self.assertEqual(self.s.auto_waiting, ["resolve"])
+        self.assertEqual(self.started, [])                  # не выключаем
+        self.assertEqual(self.s.state()["gpu"]["auto_waiting"], ["resolve"])
+        self.gpu.holders = lambda gpu=None: []               # программа закрылась
+        self.assertFalse(self.s._auto_eco())
+        self.assertIsNone(self.s.auto_waiting)
+        self.assertEqual(self.started, [True])              # Eco
+
+    def test_charger_cancels_waiting(self):
+        self.gpu.holders = lambda gpu=None: [(4242, "steam")]
+        self.s._auto_eco()
+        self.s.modes.ac = True
+        self.assertFalse(self.s._auto_eco())
+        self.assertIsNone(self.s.auto_waiting)
+        self.assertEqual(self.started, [])                  # карта и так включена

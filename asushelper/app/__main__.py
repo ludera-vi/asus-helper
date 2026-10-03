@@ -161,6 +161,8 @@ class Tray:
         if g.get("supported"):
             lines.append(f"NVIDIA: {GPU_NAMES.get(g.get('state'), g.get('state'))}"
                          + (" — Авто: от сети вкл., без сети выкл." if g.get("auto_eco") else ""))
+            if g.get("auto_waiting"):
+                lines.append("Ждёт, пока NVIDIA отпустят: " + ", ".join(g["auto_waiting"]))
         if s.get("cpu_temp") is not None:
             lines.append(f"CPU {round(s['cpu_temp'])} °C · вентиляторы {s['fans']['cpu']}/{s['fans']['gpu']} об/мин")
         self.icon.setToolTip("Asus-helper\n" + "\n".join(lines))

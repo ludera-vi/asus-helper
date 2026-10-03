@@ -111,6 +111,8 @@ class Service:
         self.gpu = gpu.Switcher(self._gpu_done)
         self._gpu_cache = {}
         self._state_cache = {}
+        self.auto_waiting: list[str] | None = None   # «Авто» ждёт, пока эти программы отпустят NVIDIA
+        self._auto_timer = 0
         self._gpu_state()
         self.history = history.History(paused=lambda: self.gpu.busy)
         self._last_profile = None
@@ -158,7 +160,7 @@ class Service:
         # Во время переключения шину PCI не читаем: при её пересканировании (включение NVIDIA) чтение
         # /sys/bus/pci ждёт до 10 с, и демон перестал бы отвечать. Отдаём последнее известное + цель.
         if self.gpu.busy:
-            return dict(self._gpu_cache, switching=True, target=self.gpu.target,
+            return dict(self._gpu_cache, switching=True, target=self.gpu.target, auto_waiting=None,
                         auto_eco=self.config.data["gpu"]["auto_eco"], error=None, can_force=False)
         supported = gpu.supported()
         self._gpu_cache = {
@@ -172,6 +174,7 @@ class Service:
             "can_force": self.gpu.can_force and self.gpu.last_error is not None,
             "external": gpu.external_displays() if supported and not gpu.bios_off() else [],
             "dgpu_name": "NVIDIA",
+            "auto_waiting": self.auto_waiting,
             "igpu_name": gpu.igpu_name(),
         }
         return self._gpu_cache
@@ -226,17 +229,51 @@ class Service:
             self.apply_slash()
         return GLib.SOURCE_CONTINUE
 
-    def _auto_eco(self) -> None:
-        if not (self.config.data["gpu"]["auto_eco"] and gpu.supported()):
-            return
+    AUTO_RECHECK_S = 10
+
+    def _auto_eco(self) -> bool:
+        """«Авто»: от сети NVIDIA включена, без сети — Eco. Если NVIDIA чем-то занята (игра, DaVinci),
+        не выключаем — ждём, пока освободится, и проверяем раз в 10 с. Возвращает, нужна ли проверка ещё."""
+        waiting_before = self.auto_waiting
+        self.auto_waiting = None
+        if not (self.config.data["gpu"]["auto_eco"] and gpu.supported()) or self.gpu.busy:
+            return self._auto_changed(waiting_before)
         want_off = not self.modes.ac
-        if want_off and gpu.external_displays():
-            log.info("«Оптимальный»: к NVIDIA подключён монитор — не выключаю")
-            return
-        if gpu.bios_off() != want_off and not self.gpu.busy:
-            log.info("«Оптимальный»: %s", "батарея → Eco" if want_off else "сеть → NVIDIA включается")
-            self.gpu.start(want_off)
+        if not want_off:
+            if gpu.bios_off():
+                log.info("«Авто»: сеть → включаю NVIDIA")
+                self.gpu.start(False)
+                self._changed()
+            return self._auto_changed(waiting_before)
+        if gpu.bios_off():
+            return self._auto_changed(waiting_before)
+        if gpu.external_displays():
+            log.info("«Авто»: к NVIDIA подключён монитор — не выключаю")
+            return self._auto_changed(waiting_before)
+        busy = sorted({c for _, c in gpu.holders()})
+        if busy:
+            # не ломаем работу программ: выключим, когда освободится
+            if busy != waiting_before:
+                log.info("«Авто»: батарея, но NVIDIA занята (%s) — жду", ", ".join(busy))
+            self.auto_waiting = busy
+            if not self._auto_timer:
+                self._auto_timer = GLib.timeout_add_seconds(self.AUTO_RECHECK_S, self._auto_recheck)
+            return self._auto_changed(waiting_before)
+        log.info("«Авто»: батарея → Eco")
+        self.gpu.start(True)
+        self._changed()
+        return False
+
+    def _auto_changed(self, before) -> bool:
+        if self.auto_waiting != before:
             self._changed()
+        return self.auto_waiting is not None
+
+    def _auto_recheck(self) -> bool:
+        if self._auto_eco():
+            return GLib.SOURCE_CONTINUE
+        self._auto_timer = 0
+        return GLib.SOURCE_REMOVE
 
     def _gpu_done(self, error) -> None:
         self.modes._nvidia_powerd(self.modes.ac)   # после включения карты сервис мог запуститься на батарее

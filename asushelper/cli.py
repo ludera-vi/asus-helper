@@ -101,6 +101,8 @@ def cmd_status(cl: Client, _args):
         print(f"Видеокарта : {GPU_NAMES.get(g['state'], g['state'])}"
               f"{'  (переключается…)' if g['switching'] else ''}"
               f"   авто: {'да' if g['auto_eco'] else 'нет'}{users}")
+        if g.get("auto_waiting"):
+            print(f"             авто ждёт, пока NVIDIA отпустят: {', '.join(g['auto_waiting'])}")
         if g.get("error"):
             print(f"             последняя ошибка: {g['error']}")
     k = s.get("keyboard") or {}
