@@ -140,10 +140,10 @@ Item {
         enabled: editor.editable
         hoverEnabled: true
         cursorShape: editor.dragIndex >= 0 || editor.hoverIndex >= 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
-        onPressed: mouse => { editor.dragIndex = editor.nearest(mouse.x, mouse.y); canvas.requestPaint() }
+        onPressed: function(mouse) { editor.dragIndex = editor.nearest(mouse.x, mouse.y); canvas.requestPaint() }
         onReleased: { if (editor.dragIndex >= 0) editor.edited(); editor.dragIndex = -1; canvas.requestPaint() }
         onExited: { editor.hoverIndex = -1; canvas.requestPaint() }
-        onPositionChanged: mouse => {
+        onPositionChanged: function(mouse) {
             const i = editor.dragIndex
             if (i < 0) {
                 const h = editor.nearest(mouse.x, mouse.y)
