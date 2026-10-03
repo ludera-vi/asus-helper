@@ -13,12 +13,13 @@ Replaces `asusd` / `asusctl`, `rog-control-center`, `supergfxctl` and `power-pro
 | | |
 |---|---|
 | **Profile** | Quiet / Balanced / Turbo, Fn+F5, by power source (Balanced on AC, Quiet on battery — changeable); KDE sees the profile (battery widget, OSD on change) |
-| **Fans and power** | custom CPU/GPU fan curve per profile (drag the points), BIOS factory curves, PL1/PL2, NVIDIA Dynamic Boost and temperature limit, EPP, Turbo Boost |
+| **Fans and power** | custom CPU/GPU fan curve per profile (drag the points), BIOS factory curves of every profile; on the *Power and CPU* page — PL1/PL2, NVIDIA Dynamic Boost and temperature limit, EPP, Turbo Boost |
 | **GPU** | **Eco** — NVIDIA turned off in BIOS without a reboot; **Standard** — hybrid; **Auto** — on with AC, off on battery (but not while a game or DaVinci uses it — it waits) |
 | **Display** | Auto (60 Hz on battery, max on AC) / 60 / 240 Hz, panel Overdrive |
 | **Keyboard** | brightness (KDE OSD for the keys too), Aura effects, color, speed, turns off when idle, when to light up |
 | **Lid (Slash)** | brightness, 15 animations, static, battery level, light up on battery and with the lid closed |
 | **Battery** | charge limit, charts of temperature, fans and drain, charge over 24 h, health by day |
+| **Appearance** | *System* — KDE colors and style; *Original* — own dark theme in the spirit of G-Helper (also used automatically where the KDE style is missing) |
 | **Other** | the ROG key opens the window, boot sound, tray icon: color — profile, dot — NVIDIA is active |
 
 There are no model lists: everything the laptop has is detected from the kernel and HID devices, and the
@@ -41,8 +42,12 @@ cd asus-helper
 ./install.sh --update         # update after git pull
 ./uninstall.sh                # remove everything, restore factory settings and reboot (--keep-config keeps settings)
 ```
-The installer first asks for the language (English / Русский). Settings from `/etc/asusd` (curves,
-lighting, profiles) are imported on the first install.
+The installer asks for the language (English / Русский) and the appearance (system or original). Settings
+from `/etc/asusd` (curves, lighting, profiles) are imported on the first install.
+
+**Log out once after the first install.** The desktop started before the install and runs on NVIDIA, so
+Eco cannot turn it off yet; after logging out and back in KDE runs on the integrated GPU. The installer
+offers to log out right away (the window shows a *Log out* button too).
 
 An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AUR registration reopens.
 
@@ -50,9 +55,11 @@ An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AU
 
 - **Tray icon**: left click — window, right click — quick menu (profiles, Eco). Icon color — profile
   (Quiet green, Balanced blue, Turbo red), purple dot — NVIDIA is active.
-- **ROG key** above the keyboard opens the window (change it in System Settings → Shortcuts).
+- **ROG key** above the keyboard opens the window. Laptops without it: assign any key to *Open Asus-helper*
+  in System Settings → Shortcuts.
 - **Terminal**: `asus-helper-cli` — status; `asus-helper-cli --help` — all commands.
 - **Language**: the RU / EN switch at the bottom of the window or `asus-helper-cli language ru`.
+- **Appearance**: the button next to RU / EN — system or original; the window restarts.
 - **Games on NVIDIA**: in Standard programs use NVIDIA by themselves; for old OpenGL games —
   `prime-run program` (in Steam: launch options `prime-run %command%`).
 
