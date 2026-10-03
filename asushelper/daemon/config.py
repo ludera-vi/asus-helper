@@ -58,6 +58,8 @@ DEFAULTS = {
     },
     "keyboard": {
         "brightness": 2,          # 0–3; меняется и клавишами — демон запоминает
+        "timeout_ac": 0,          # гаснуть через столько секунд без нажатий от сети; 0 — не гаснуть
+        "timeout_battery": 0,     # то же на батарее
         "mode": "static",         # static | breathe | cycle | strobe
         "color": "#FFFFFF",
         "color2": "#000000",      # второй цвет для breathe

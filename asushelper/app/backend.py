@@ -227,6 +227,9 @@ class Backend(QObject):
                       "org.freedesktop.UPower.Device", "GetHistory", GLib.Variant("(suu)", ("charge", 86400, 300)),
                       None, Gio.DBusCallFlags.NONE, 5000, None, done)
 
+    @Slot(int, int)
+    def setKeyboardTimeout(self, ac, battery): self._call("SetKeyboardTimeout", "uu", (ac, battery))
+
     @Slot(int)
     def setKeyboardBrightness(self, v): self._call("SetKeyboardBrightness", "u", (v,))
 

@@ -17,6 +17,7 @@
                                        --force закроет программы на ней, --display — даже с монитором на NVIDIA
   asus-helper-cli gpu auto on|off        «Авто»: Eco без зарядки, NVIDIA от сети
   asus-helper-cli kbd [0-3]              яркость подсветки клавиатуры
+  asus-helper-cli kbd timeout СЕТЬ БАТАРЕЯ   гаснуть без нажатий через N секунд (0 — не гаснуть)
   asus-helper-cli aura static|breathe|cycle|strobe [#RRGGBB] [#RRGGBB] [slow|normal|fast]
   asus-helper-cli aura power awake,boot,sleep,shutdown   когда светиться (перечислить нужное)
   asus-helper-cli slash [0-3] [АНИМАЦИЯ] [пауза 0-5]   полоса на крышке (0 — выключить)
@@ -234,6 +235,8 @@ def cmd_kbd(cl, args):
     if not args:
         k = cl.state()["keyboard"]
         print(f"{k.get('brightness')}/{k.get('max', 3)}")
+    elif args[0] == "timeout" and len(args) == 3:
+        cl.call("SetKeyboardTimeout", "uu", int(args[1]), int(args[2]))
     elif args[0].isdigit():
         cl.call("SetKeyboardBrightness", "u", int(args[0]))
     else:

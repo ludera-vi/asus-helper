@@ -501,6 +501,30 @@ ColumnLayout {
                 }
             }
 
+            QQC2.Label { text: "Гаснуть, если клавиатуру и тачпад не трогать"; opacity: 0.8 }
+            GridLayout {
+                id: timeouts
+                columns: 2
+                Layout.fillWidth: true
+                readonly property var values: [0, 15, 30, 60, 120, 300, 600]
+                readonly property var names: ["никогда", "через 15 с", "через 30 с", "через 1 мин", "через 2 мин", "через 5 мин", "через 10 мин"]
+                function index(v) { const i = values.indexOf(v || 0); return i < 0 ? 0 : i }
+                QQC2.Label { text: "От сети" }
+                QQC2.ComboBox {
+                    Layout.fillWidth: true
+                    model: timeouts.names
+                    currentIndex: timeouts.index(page.kbd.timeout_ac)
+                    onActivated: i => backend.setKeyboardTimeout(timeouts.values[i], page.kbd.timeout_battery || 0)
+                }
+                QQC2.Label { text: "От батареи" }
+                QQC2.ComboBox {
+                    Layout.fillWidth: true
+                    model: timeouts.names
+                    currentIndex: timeouts.index(page.kbd.timeout_battery)
+                    onActivated: i => backend.setKeyboardTimeout(page.kbd.timeout_ac || 0, timeouts.values[i])
+                }
+            }
+
             QQC2.Label { text: "Когда светиться"; opacity: 0.8 }
             GridLayout {
                 columns: 2

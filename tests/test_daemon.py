@@ -524,3 +524,38 @@ class AutoEcoTest(unittest.TestCase):
         self.assertFalse(self.s._auto_eco())
         self.assertIsNone(self.s.auto_waiting)
         self.assertEqual(self.started, [])                  # карта и так включена
+
+
+class KeyboardIdleTest(unittest.TestCase):
+    def setUp(self):
+        fakesys.build(ROOT)
+        from asushelper.daemon import idle
+        self.idle_mod = idle
+        self.cfg = Config(os.path.join(CONF, "idle.json"))
+        self.ac = True
+        self.k = idle.KeyboardIdle(self.cfg, lambda: self.ac)
+        self.led = "/sys/class/leds/asus::kbd_backlight/brightness"
+
+    def test_dims_after_timeout_and_restores(self):
+        self.cfg.data["keyboard"].update(timeout_ac=30, timeout_battery=10)
+        self.k.last -= 20
+        self.k._check()
+        self.assertEqual(fakesys.read(ROOT, self.led), "2")          # от сети 30 с ещё не прошло
+        self.ac = False
+        self.k._check()
+        self.assertEqual(fakesys.read(ROOT, self.led), "0")          # на батарее 10 с прошло — погасла
+        self.k.activity()
+        self.assertEqual(fakesys.read(ROOT, self.led), "2")          # нажали — вернулась прежняя яркость
+
+    def test_never_and_manual_change(self):
+        self.k.last -= 9999
+        self.k._check()
+        self.assertEqual(fakesys.read(ROOT, self.led), "2")          # по умолчанию не гаснет
+        self.cfg.data["keyboard"]["timeout_ac"] = 5
+        self.k._check()
+        fakesys._w(ROOT, self.led, 3)                                # пока не горела, яркость сменили клавишами
+        self.k.activity()
+        self.assertEqual(fakesys.read(ROOT, self.led), "3")          # не перебиваем
+
+    def test_device_filter(self):
+        self.assertIsInstance(self.idle_mod._activity_devices(), list)

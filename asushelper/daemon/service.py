@@ -14,6 +14,7 @@ from . import aura
 from . import gpu
 from . import hardware as hw
 from . import history
+from . import idle
 from . import slash
 from .config import Config
 from .modes import Modes
@@ -74,6 +75,10 @@ XML = f"""
     </method>
     <!-- датчики за последний час (раз в 5 с) и здоровье батареи по дням -->
     <method name="GetHistory"><arg type="s" direction="out" name="json"/></method>
+    <!-- гаснуть без нажатий: секунды от сети и от батареи, 0 — не гаснуть -->
+    <method name="SetKeyboardTimeout">
+      <arg type="u" direction="in" name="ac"/><arg type="u" direction="in" name="battery"/>
+    </method>
     <method name="SetKeyboardBrightness"><arg type="u" direction="in" name="level"/></method>
     <method name="SetAura">
       <arg type="s" direction="in" name="mode"/><arg type="s" direction="in" name="color"/>
@@ -113,6 +118,7 @@ class Service:
         self._state_cache = {}
         self.auto_waiting: list[str] | None = None   # «Авто» ждёт, пока эти программы отпустят NVIDIA
         self._auto_timer = 0
+        self.idle = None
         self._gpu_state()
         self.history = history.History(paused=lambda: self.gpu.busy)
         self._last_profile = None
@@ -193,6 +199,7 @@ class Service:
         self.apply_keyboard()
         self.apply_slash(wake=True)
         self.history.start()
+        self.idle = idle.KeyboardIdle(self.config, lambda: self.modes.ac) if aura.brightness() else None
         # «Заряд батареи» на Slash — обновлять раз в минуту
         GLib.timeout_add_seconds(60, self._slash_battery_tick)
         self.modes.startup()
@@ -201,6 +208,8 @@ class Service:
 
     def resumed(self) -> None:
         self.modes.ac = hw.on_ac()
+        if self.idle:
+            self.idle.reset()
         self.apply_keyboard()
         self.apply_slash(wake=True)
         self.modes.reapply("выход из сна")
@@ -501,6 +510,15 @@ class Service:
 
     def do_GetHistory(self):
         return json.dumps(self.history.dump())
+
+    def do_SetKeyboardTimeout(self, ac, battery):
+        if ac > 3600 or battery > 3600:
+            raise Failed("не больше часа (3600 с)")
+        self.config.data["keyboard"].update(timeout_ac=int(ac), timeout_battery=int(battery))
+        self.config.save()
+        if self.idle:
+            self.idle.activity()
+        self._changed()
 
     def do_SetKeyboardBrightness(self, level):
         if not aura.set_brightness(level):
