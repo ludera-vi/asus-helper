@@ -156,12 +156,32 @@ ColumnLayout {
                     text: Theme.tr("Закрыть их и выключить")
                     icon.name: "process-stop-symbolic"
                     onTriggered: backend.setGpuMode("eco", true)
+                },
+                Kirigami.Action {
+                    visible: !!page.gpu.desktop_holds
+                    text: Theme.tr("Выйти из сеанса")
+                    icon.name: "system-log-out-symbolic"
+                    onTriggered: backend.logout()
+                }
+            ]
+        }
+        Kirigami.InlineMessage {
+            // ошибки нет (например, «Авто» ждёт), но карту держит сам рабочий стол — объяснить и предложить выход
+            Layout.fillWidth: true
+            visible: !page.gpu.error && !page.gpu.switching && !!page.gpu.desktop_holds
+            type: Kirigami.MessageType.Information
+            text: Theme.tr("Рабочий стол KDE запущен до установки и работает на %1 — выключить её можно будет после выхода из сеанса и входа снова (один раз)").arg(page.dgpu)
+            actions: [
+                Kirigami.Action {
+                    text: Theme.tr("Выйти из сеанса")
+                    icon.name: "system-log-out-symbolic"
+                    onTriggered: backend.logout()
                 }
             ]
         }
         QQC2.Label {
             Layout.fillWidth: true
-            visible: !page.gpu.error && (page.gpu.holders || []).length > 0
+            visible: !page.gpu.error && !page.gpu.desktop_holds && (page.gpu.holders || []).length > 0
             text: Theme.tr("Держат %1: ").arg(page.dgpu) + (page.gpu.holders || []).join(", ")
             font: Kirigami.Theme.smallFont
             opacity: 0.7

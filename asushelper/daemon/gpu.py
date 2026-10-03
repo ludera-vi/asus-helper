@@ -164,6 +164,18 @@ def external_displays(gpu: str | None = None) -> list[str]:
     return out
 
 
+# systemd и systemd-logind держат видеокарту не для себя, а за рабочий стол (logind выдаёт KWin доступ к
+# устройству и хранит его копию). Человеку в списке «кто занял NVIDIA» они только мешают.
+SESSION_KEEPERS = ("systemd", "systemd-logind")
+
+
+def names(busy: list[tuple[int, str]]) -> list[str]:
+    """Имена для показа: без служебных хранителей сеанса, если есть кто-то ещё."""
+    all_ = sorted({c for _, c in busy})
+    shown = [c for c in all_ if c not in SESSION_KEEPERS]
+    return shown or all_
+
+
 def holders(gpu: str | None = None) -> list[tuple[int, str]]:
     """Процессы, у которых открыта NVIDIA: [(pid, имя)]. Карту не будит — смотрит только /proc."""
     gpu = gpu or find_gpu()
@@ -361,14 +373,14 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
     if gpu:
         busy = holders(gpu)
         if busy:
-            names = ", ".join(sorted({c for _, c in busy}))
-            protected = sorted({c for p, c in busy if is_protected(p, c)})
+            listed = ", ".join(names(busy))
+            protected = names([(p, c) for p, c in busy if is_protected(p, c)])
             if protected:
                 # закрывать нельзя — это рабочий стол или система
                 raise GpuError(_("NVIDIA держит рабочий стол ({0}). Он отпустит её после выхода из сеанса и входа снова — один раз после установки Asus-helper").format(', '.join(protected)))
             if not force:
-                raise GpuError(_("NVIDIA используют: {0}").format(names), can_force=True)
-            log.info(_("закрываю программы на NVIDIA: %s"), names)
+                raise GpuError(_("NVIDIA используют: {0}").format(listed), can_force=True)
+            log.info(_("закрываю программы на NVIDIA: %s"), listed)
             for pid, _comm in busy:
                 try:
                     os.kill(pid, signal.SIGTERM)

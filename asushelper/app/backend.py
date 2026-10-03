@@ -166,6 +166,13 @@ class Backend(QObject):
             self._call("GetConfig", done=self._set_config, quiet=True)
 
     # ---------- команды ----------
+    @Slot()
+    def logout(self):
+        """Штатное окно выхода KDE (с подтверждением) — после нового входа рабочий стол уйдёт с NVIDIA."""
+        Gio.bus_get_sync(Gio.BusType.SESSION, None).call(
+            "org.kde.LogoutPrompt", "/LogoutPrompt", "org.kde.LogoutPrompt", "promptLogout",
+            None, None, Gio.DBusCallFlags.NONE, -1, None, None)
+
     @Slot(str)
     def setProfile(self, p): self._call("SetProfile", "s", (p,))
 

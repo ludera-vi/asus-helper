@@ -214,7 +214,10 @@ class Service:
         """state() и то, что дорого считать для каждого сигнала (кто держит NVIDIA)."""
         s = self.state()
         if s["gpu"]["state"] not in (None, "off") and not s["gpu"]["switching"]:
-            s["gpu"]["holders"] = sorted({c for _, c in gpu.holders()})
+            h = gpu.holders()
+            s["gpu"]["holders"] = gpu.names(h)
+            # рабочий стол запущен до установки и работает на NVIDIA — поможет только новый вход
+            s["gpu"]["desktop_holds"] = any(c in gpu.DESKTOP for _, c in h)
         return s
 
     # ---------- события ----------
@@ -285,7 +288,7 @@ class Service:
         if gpu.external_displays():
             log.info(_("«Авто»: к NVIDIA подключён монитор — не выключаю"))
             return self._auto_changed(waiting_before)
-        busy = sorted({c for _, c in gpu.holders()})
+        busy = gpu.names(gpu.holders())
         if busy:
             # не ломаем работу программ: выключим, когда освободится
             if busy != waiting_before:

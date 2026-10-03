@@ -259,7 +259,6 @@ for r in "${RESULTS[@]}"; do echo "  $r"; done
 echo
 if [ $FAILED -eq 0 ]; then
     echo "  ${GREEN}${B}$(L "Готово." "Done.")${R} $(L "Значок Asus-helper — в трее; клавиша ROG открывает окно." "The Asus-helper icon is in the tray; the ROG key opens the window.")"
-    [ $need_relogin = 1 ] && echo "  ${YELLOW}$(L "Один раз выйди из сеанса и войди снова" "Log out and back in once")${R} — $(L "тогда Eco будет включаться без выхода." "then Eco will work without logging out.")"
 else
     echo "  ${YELLOW}${B}$(L "Установлено с ошибками." "Installed with errors.")${R} $(L "Журнал" "Log"): $LOG"
 fi
@@ -270,3 +269,20 @@ cat <<EOF
   $(L "Удаление" "Remove"):  ./uninstall.sh${R}
 
 EOF
+
+# Рабочий стол запущен до установки и держит NVIDIA: настройка «KDE только на встроенной видеокарте»
+# подействует со следующего входа. Без этого Eco не выключит карту — говорим прямо и предлагаем выйти.
+if [ $FAILED -eq 0 ] && [ $need_relogin = 1 ]; then
+    echo "  ${YELLOW}${B}$(L "Нужен один выход из сеанса." "One log out is needed.")${R}"
+    explain "$(L "Рабочий стол KDE запустился до установки и сейчас работает на NVIDIA — выключить её (Eco) нельзя." \
+                 "The KDE desktop started before the install and runs on NVIDIA now — it cannot be turned off (Eco).")"
+    explain "$(L "После выхода и входа рабочий стол будет на встроенной видеокарте, и Eco заработает. Это нужно один раз." \
+                 "After logging out and back in the desktop uses the integrated GPU and Eco works. Needed once.")"
+    if command -v qdbus6 >/dev/null && ask "$(L "Выйти из сеанса сейчас? (сначала сохрани открытые документы)" "Log out now? (save your open documents first)")" Y; then
+        qdbus6 org.kde.LogoutPrompt /LogoutPrompt org.kde.LogoutPrompt.promptLogout >/dev/null 2>&1 ||
+            qdbus6 org.kde.Shutdown /Shutdown org.kde.Shutdown.logout >/dev/null 2>&1
+    else
+        explain "$(L "Выйди позже сам: меню → Выйти." "Log out later yourself: menu → Log Out.")"
+    fi
+    echo
+fi
