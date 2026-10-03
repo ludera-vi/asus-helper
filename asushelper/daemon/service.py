@@ -523,11 +523,21 @@ class Service:
         self.config.save()
         self._changed()
         if lang != i18n.LANG:
-            # перезапуск на новом языке, когда ответ клиенту уже ушёл (systemd видит тот же процесс)
-            import os
-            import sys
             log.info(_("язык → %s, перезапускаю демон"), lang)
-            GLib.timeout_add(500, lambda: os.execv(sys.executable, [sys.executable, "-m", "asushelper.daemon", *sys.argv[1:]]))
+            GLib.timeout_add(300, self._restart_self)    # когда ответ клиенту уже ушёл
+
+    def _restart_self(self):
+        """Перезапуск на новом языке. Под systemd — через systemd (служба типа dbus: если процесс сам
+        отпустит имя на шине, systemd сочтёт её завершённой и остановит). Без systemd — exec себя."""
+        import os
+        import sys
+        if os.environ.get("INVOCATION_ID"):
+            self.bus.call("org.freedesktop.systemd1", "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager",
+                          "RestartUnit", GLib.Variant("(ss)", ("asus-helperd.service", "replace")),
+                          None, Gio.DBusCallFlags.NONE, -1, None, None)
+        else:
+            os.execv(sys.executable, [sys.executable, "-m", "asushelper.daemon", *sys.argv[1:]])
+        return GLib.SOURCE_REMOVE
 
     def do_SetKeyboardTimeout(self, ac, battery):
         if ac > 3600 or battery > 3600:
