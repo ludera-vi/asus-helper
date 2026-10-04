@@ -156,7 +156,10 @@ if [ ${#back[@]} -gt 0 ]; then
                     supergfxctl) svc=supergfxd ;;
                     *) continue ;;
                 esac
-                sudo systemctl enable --now "$svc.service" >/dev/null 2>&1
+                # маска (её часто ставят на power-profiles-daemon ради asusctl) не дала бы службе запуститься;
+                # asusd — служба «static», её запускает udev при загрузке: enable ничего не даст, только start
+                sudo systemctl unmask "$svc.service" >/dev/null 2>&1
+                sudo systemctl enable --now "$svc.service" >/dev/null 2>&1 || sudo systemctl start "$svc.service" >/dev/null 2>&1
             done
             ok "$(L "Возвращено" "Restored"): ${back[*]}"
         else
