@@ -31,7 +31,7 @@ yours: `asus-helper-cli diag` — please attach its output to an issue if someth
 - ASUS laptop (ROG, TUF, Zephyrus, Strix, Flow…), kernel with `asus-wmi` (6.15+ with `asus-armoury` is best)
 - KDE Plasma 6 on Wayland; Arch Linux or derivatives (CachyOS, EndeavourOS, Manjaro)
 - For Eco: NVIDIA with the `nvidia` / `nvidia-open` driver, MUX in hybrid mode
-- **Without** `asusctl`, `power-profiles-daemon`, `supergfxctl`, `envycontrol` — they do the same job
+- **Without** `asusctl`, `power-profiles-daemon` (or `tuned-ppd`), `supergfxctl`, `envycontrol` — they do the same job
 
 ## Installation
 
@@ -43,7 +43,8 @@ cd asus-helper
 ./uninstall.sh                # remove everything, restore factory settings and reboot (--keep-config keeps settings)
 ```
 The installer asks for the language (English / Русский) and the appearance (system or original). Settings
-from `/etc/asusd` (curves, lighting, profiles) are imported on the first install.
+from `/etc/asusd` (curves, lighting, profiles) are imported on the first install. At the end it shows what
+was found on the laptop (the same as `asus-helper-cli diag`).
 
 **Log out once after the first install.** The desktop started before the install and runs on NVIDIA, so
 Eco cannot turn it off yet; after logging out and back in KDE runs on the integrated GPU. The installer
