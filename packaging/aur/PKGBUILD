@@ -10,7 +10,9 @@ depends=('python' 'python-gobject' 'pyside6' 'polkit' 'systemd' 'libkscreen' 'hw
          'kirigami' 'qqc2-desktop-style' 'layer-shell-qt')
 makedepends=('make')
 optdepends=('nvidia-utils: NVIDIA load, power and temperature in the window'
-            'snapper: snapshot before installing')
+            'snapper: snapshot before installing'
+            'gnome-shell-extension-appindicator: tray icon in GNOME'
+            'breeze-icons: window icons outside KDE (GNOME and others)')
 # Делают то же самое — вместе с демоном спорили бы за вентиляторы, режимы и видеокарту
 conflicts=('asusctl' 'rog-control-center' 'power-profiles-daemon' 'supergfxctl' 'envycontrol' 'nvidia-prime')
 provides=('nvidia-prime')

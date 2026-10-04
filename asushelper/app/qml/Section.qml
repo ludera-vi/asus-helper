@@ -65,7 +65,7 @@ Item {
                 elide: Text.ElideRight
                 text: section.info
                 color: section.infoColor
-                font: Kirigami.Theme.smallFont
+                font: Theme.smallFont
                 opacity: 0.8
                 HoverHandler { id: infoHover }
                 QQC2.ToolTip.visible: infoHover.hovered && infoLabel.truncated

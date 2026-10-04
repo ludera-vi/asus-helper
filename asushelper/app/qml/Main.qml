@@ -1,5 +1,6 @@
 // Окно Asus-helper. В KDE на Wayland — всплывающая панель у трея (layer-shell): прикреплена к углу
-// экрана со стороны панели, закрывается по Esc и по клику мимо. В других средах — обычное окно.
+// экрана со стороны панели, закрывается по Esc и по клику мимо. В других средах — обычное окно;
+// в GNOME (layer-shell там нет) его можно перетащить за шапку.
 import QtQuick
 import QtQuick.Window
 import QtQuick.Layouts
@@ -12,6 +13,8 @@ Window {
 
     // anchorTop задаёт Python: панель сверху — окно у верхнего края, снизу — у нижнего
     property bool anchorTop: true
+    // movable задаёт Python: окно без layer-shell (GNOME) — таскается за шапку
+    property bool movable: false
     readonly property int edge: Kirigami.Units.smallSpacing * 2
 
     width: Kirigami.Units.gridUnit * 25
@@ -62,6 +65,13 @@ Window {
     readonly property bool original: backend.theme === "original"
     readonly property var oc: originalColors
     Binding { target: Theme; property: "original"; value: win.original }
+    Binding {
+        target: Theme; property: "smallFont"
+        value: Kirigami.Theme.smallFont.pointSize < Kirigami.Theme.defaultFont.pointSize
+               ? Kirigami.Theme.smallFont
+               : Qt.font({ family: Kirigami.Theme.defaultFont.family,
+                           pointSize: Math.round(Kirigami.Theme.defaultFont.pointSize * 0.82) })
+    }
     Binding { target: Theme; property: "card"; value: win.oc.card; when: win.original }
     Binding { target: Theme; property: "positive"; value: win.original ? win.oc.positive : Kirigami.Theme.positiveTextColor }
     Binding { target: Theme; property: "highlight"; value: win.original ? win.oc.accent : Kirigami.Theme.highlightColor }
@@ -108,6 +118,11 @@ Window {
                 id: header
                 Layout.fillWidth: true
                 Layout.leftMargin: Kirigami.Units.smallSpacing
+                DragHandler {
+                    enabled: win.movable
+                    target: null
+                    onActiveChanged: if (active) win.startSystemMove()
+                }
                 Kirigami.Icon {
                     implicitWidth: Kirigami.Units.iconSizes.medium
                     implicitHeight: implicitWidth
@@ -122,7 +137,7 @@ Window {
                         text: backend.connected ? (((backend.state || {}).model || {}).name || "ASUS") + " · " + Theme.profileName((backend.state || {}).profile)
                                                 : Theme.tr("демон не запущен")
                         color: backend.connected ? Kirigami.Theme.textColor : Kirigami.Theme.negativeTextColor
-                        font: Kirigami.Theme.smallFont
+                        font: Theme.smallFont
                         opacity: backend.connected ? 0.7 : 1
                     }
                 }

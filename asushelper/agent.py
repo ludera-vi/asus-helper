@@ -1,6 +1,6 @@
 """asus-helper-agent — помощник в сеансе пользователя (замена asus-osd).
 
-Слушает демон на системной шине и показывает карточки KDE:
+Слушает демон на системной шине и показывает карточки KDE (в GNOME — через расширение Asus-helper):
   • смена режима (Fn+F5, автоматика сеть/батарея, приложение) — карточка режима;
   • яркость подсветки клавишами — карточка подсветки;
   • видеокарта переключилась или не смогла — уведомление;
@@ -10,6 +10,7 @@ KDE сам рисует карточку режима только когда м
 """
 import json
 import logging
+import os
 import sys
 
 import gi
@@ -22,6 +23,11 @@ from .i18n import _
 log = logging.getLogger("asus-helper-agent")
 
 PPD_NAMES = {"quiet": "power-saver", "balanced": "balanced", "performance": "performance"}
+# GNOME: значки карточек из темы Adwaita и подписи режимов
+GNOME_ICONS = {"quiet": "power-profile-power-saver-symbolic", "balanced": "power-profile-balanced-symbolic",
+               "performance": "power-profile-performance-symbolic"}
+PROFILE_NAMES = {"quiet": _("Тихий"), "balanced": _("Баланс"), "performance": _("Турбо")}
+GNOME = "GNOME" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
 GPU_TEXT = {"off": _("NVIDIA выключена (Eco)"), "suspended": _("NVIDIA включена"), "active": _("NVIDIA включена")}
 
 
@@ -48,6 +54,12 @@ class Agent:
         except GLib.Error:
             log.info(_("демон пока не запущен — жду его сигналов"))
 
+    def gnome_osd(self, icon: str, label: str, level: float = -1) -> None:
+        """Карточка GNOME через расширение Asus-helper (org.asushelper.Shell); нет расширения — молча ничего."""
+        self.session.call("org.asushelper.Shell", "/org/asushelper/Shell", "org.asushelper.Shell", "ShowOSD",
+                          GLib.Variant("(ssd)", (icon, label, level)), None, Gio.DBusCallFlags.NO_AUTO_START,
+                          -1, None, None, None)
+
     def osd(self, method: str, sig: str, value) -> None:
         self.session.call("org.kde.plasmashell", "/org/kde/osdService", "org.kde.osdService", method,
                           GLib.Variant(f"({sig})", (value,)), None, Gio.DBusCallFlags.NO_AUTO_START,
@@ -72,7 +84,10 @@ class Agent:
         profile = state.get("profile")
         if profile and profile != self.profile:
             if self.profile is not None:
-                self.osd("powerProfileChanged", "s", PPD_NAMES.get(profile, "balanced"))
+                if GNOME:
+                    self.gnome_osd(GNOME_ICONS.get(profile, GNOME_ICONS["balanced"]), PROFILE_NAMES.get(profile, profile))
+                else:
+                    self.osd("powerProfileChanged", "s", PPD_NAMES.get(profile, "balanced"))
             self.profile = profile
         # вопрос больше не актуален (подключили зарядку, программы закрыли, выбрали режим вручную)
         if self.ask_id and not (state.get("gpu") or {}).get("auto_waiting"):
@@ -80,7 +95,10 @@ class Agent:
 
     def on_brightness(self, *args):
         level, top = args[5].unpack()
-        self.osd("keyboardBrightnessChanged", "i", round(level * 100 / (top or 1)))
+        if GNOME:
+            self.gnome_osd("keyboard-brightness-symbolic", _("Подсветка клавиатуры"), level / (top or 1))
+        else:
+            self.osd("keyboardBrightnessChanged", "i", round(level * 100 / (top or 1)))
 
     def on_gpu(self, *args):
         state, error = args[5].unpack()

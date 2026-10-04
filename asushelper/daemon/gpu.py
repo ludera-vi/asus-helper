@@ -561,6 +561,9 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
         # с чужим драйвером снимать карту с шины опасно — может зависнуть ядро
         raise GpuError(_("видеокарта работает на драйвере {0}, а Eco умеет выключать её только с драйвером NVIDIA "
                          "(пакет nvidia-open или nvidia)").format(drv))
+    if gpu and (desk := desktop_on_screen(gpu)):
+        raise GpuError(_("рабочий стол ({0}) запущен на NVIDIA — выключить её сейчас нельзя. Выйдите из сеанса и "
+                         "войдите снова: после этого он будет на встроенной видеокарте").format(", ".join(desk)))
     _settle()
     if gpu:
         _cleanup(gpu)
@@ -686,18 +689,25 @@ KWIN_ENV = "/run/asus-helper/kwin.env"
 IGPU_LINK = "/dev/dri/igpu"
 
 
-def kwin_env_lines() -> list[str]:
+# Без этих переменных Xwayland и сам композитор открывают /dev/nvidia*, перебирая видеокарты для OpenGL
+MESA_ONLY = ["__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json",
+             "__GLX_VENDOR_LIBRARY_NAME=mesa"]
+
+
+def igpu_only() -> bool:
+    """Рабочему столу можно работать только на встроенной видеокарте: есть NVIDIA, MUX в гибриде,
+    экран при загрузке ведёт встроенная (/dev/dri/igpu)."""
     if not (supported() and mux_hybrid()):
-        return []
+        return False
     link = sysfs.path(IGPU_LINK)
     if not os.path.exists(link):
-        return []
+        return False
     card = os.path.basename(os.path.realpath(link))
-    if sysfs.read(f"/sys/class/drm/{card}/device/vendor") == "0x10de":   # «встроенная» оказалась NVIDIA
-        return []
-    return ["KWIN_DRM_DEVICES=" + IGPU_LINK,
-            "__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json",
-            "__GLX_VENDOR_LIBRARY_NAME=mesa"]
+    return sysfs.read(f"/sys/class/drm/{card}/device/vendor") != "0x10de"   # «встроенная» оказалась NVIDIA
+
+
+def kwin_env_lines() -> list[str]:
+    return ["KWIN_DRM_DEVICES=" + IGPU_LINK, *MESA_ONLY] if igpu_only() else []
 
 
 def write_kwin_env() -> None:
@@ -711,4 +721,79 @@ def write_kwin_env() -> None:
     except OSError as e:
         log.warning(_("не записать %s: %s"), KWIN_ENV, e)
         return
-    log.info(_("рабочий стол KDE: %s"), _("только встроенная видеокарта") if lines else _("как обычно (все видеокарты)"))
+    if os.path.exists("/usr/bin/kwin_wayland"):
+        log.info(_("рабочий стол KDE: %s"), _("только встроенная видеокарта") if lines else _("как обычно (все видеокарты)"))
+
+
+# GNOME (mutter) тоже захватывает все видеокарты — и экран входа GDM, и сеанс; тогда снятие NVIDIA с шины
+# зависает в ядре. Видеокарту с тегом udev «mutter-device-ignore» mutter не открывает. Правило
+# 61-asus-helper-mutter.rules ставит этот тег на NVIDIA, только пока есть MUTTER_FLAG; флаг пишем при тех же
+# условиях, что и kwin.env. Демон стартует раньше GDM (gdm.service.d/asus-helper.conf), а карту, которая
+# появилась до флага, перечитываем (событие change). Окружение gnome-shell и его Xwayland — GNOME_ENV
+# (drop-in для org.gnome.Shell@wayland.service). Нет флага — GNOME работает как обычно.
+MUTTER_FLAG = "/run/asus-helper/mutter-igpu-only"
+GNOME_ENV = "/run/asus-helper/gnome.env"
+MUTTER_TAG = "mutter-device-ignore"
+
+
+def nvidia_cards() -> list[str]:
+    """DRM-узлы NVIDIA: ["card0"]."""
+    gpu = find_gpu()
+    return [os.path.basename(c) for c in sysfs.find(f"{PCI}/{gpu}/drm/card*")] if gpu else []
+
+
+def mutter_ignores(card: str) -> bool:
+    """Тег уже стоит: в базе udev (/run/udev/data/c226:N) теги — строки «G:тег»."""
+    dev = sysfs.read(f"/sys/class/drm/{card}/dev")
+    try:
+        with open(sysfs.path(f"/run/udev/data/c{dev}")) as f:
+            return f"G:{MUTTER_TAG}\n" in f.read()
+    except (OSError, TypeError):
+        return False
+
+
+def write_gnome_env() -> None:
+    on = igpu_only()
+    try:
+        os.makedirs(os.path.dirname(sysfs.path(GNOME_ENV)), exist_ok=True)
+        with open(sysfs.path(GNOME_ENV), "w") as f:
+            f.write(_("# Asus-helper: GNOME только на встроенной видеокарте (см. gpu.py)\n"))
+            f.write("".join(l + "\n" for l in (MESA_ONLY if on else [])))
+        if on:
+            open(sysfs.path(MUTTER_FLAG), "w").close()
+        elif os.path.exists(sysfs.path(MUTTER_FLAG)):
+            os.remove(sysfs.path(MUTTER_FLAG))
+    except OSError as e:
+        log.warning(_("не записать %s: %s"), GNOME_ENV, e)
+        return
+    if on:
+        # карта появилась раньше флага — пусть udev перечитает её; ждём тег до 3 с, GDM ещё не запущен
+        todo = [c for c in nvidia_cards() if not mutter_ignores(c)]
+        for card in todo:
+            sysfs.write(f"/sys/class/drm/{card}/uevent", "change")
+        end = time.monotonic() + 3
+        while todo and time.monotonic() < end and not all(map(mutter_ignores, todo)):
+            time.sleep(0.1)
+    if os.path.exists("/usr/bin/gnome-shell"):
+        log.info(_("рабочий стол GNOME: %s"), _("только встроенная видеокарта") if on else _("как обычно (все видеокарты)"))
+
+
+def desktop_on_screen(gpu: str | None = None) -> list[str]:
+    """Рабочий стол или экран входа вывел изображение через NVIDIA (держит её card*). Снимать карту с шины
+    тогда нельзя: ядро зависнет до перезагрузки. Пусто — можно."""
+    gpu = gpu or find_gpu()
+    if gpu is None or sysfs.ROOT:
+        return []
+    nodes = {f"/dev/dri/{c}" for c in nvidia_cards()}
+    out = []
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            with open(f"/proc/{pid}/comm") as f:
+                comm = f.read().strip()
+            if not is_desktop(comm) or comm in SESSION_KEEPERS:
+                continue
+            if any(os.readlink(f"/proc/{pid}/fd/{fd}") in nodes for fd in os.listdir(f"/proc/{pid}/fd")):
+                out.append(comm)
+        except OSError:
+            continue
+    return sorted(set(out))

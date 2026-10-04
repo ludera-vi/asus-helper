@@ -1,4 +1,4 @@
-"""Клавиша, которая открывает окно: регистрируется в KDE (KGlobalAccel) самой программой.
+"""Клавиша, которая открывает окно: регистрируется в KDE (KGlobalAccel) или GNOME (gsettings) самой программой.
 
 Клавиша ROG / Armoury Crate на ноутбуках ASUS приходит как KEY_PROG1 (так её отображают драйверы
 hid-asus и asus-wmi), в KDE это «Launch (1)». Есть ли такая кнопка физически, Linux не знает —
@@ -82,3 +82,28 @@ class GlobalShortcut:
         component, action, _ts = params.unpack()
         if component == COMPONENT and action == ACTION:
             self.on_pressed()
+
+
+# GNOME: своя комбинация в «Настройки → Клавиатура → Свои комбинации клавиш» — команда asus-helper
+# (второй запуск открывает окно уже запущенной программы). Клавиша ROG там называется XF86Launch1.
+# Комбинацию создаём один раз; если человек её изменил или удалил клавишу — больше не трогаем.
+GNOME_KEYS = "org.gnome.settings-daemon.plugins.media-keys"
+GNOME_PATH = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/asus-helper/"
+
+
+def gnome_shortcut() -> None:
+    import shutil
+    src = Gio.SettingsSchemaSource.get_default()
+    if not src or not src.lookup(GNOME_KEYS, True) or not src.lookup(GNOME_KEYS + ".custom-keybinding", True):
+        return
+    keys = Gio.Settings.new(GNOME_KEYS)
+    paths = keys.get_strv("custom-keybindings")
+    if GNOME_PATH in paths:
+        return
+    entry = Gio.Settings.new_with_path(GNOME_KEYS + ".custom-keybinding", GNOME_PATH)
+    entry.set_string("name", _("Открыть Asus-helper"))
+    entry.set_string("command", shutil.which("asus-helper") or "asus-helper")
+    entry.set_string("binding", "XF86Launch1" if rog_key() else "")
+    keys.set_strv("custom-keybindings", paths + [GNOME_PATH])
+    Gio.Settings.sync()
+    log.info(_("клавиша окна: %s"), "XF86Launch1" if rog_key() else _("не назначена"))

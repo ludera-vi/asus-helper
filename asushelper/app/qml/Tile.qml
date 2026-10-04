@@ -94,7 +94,7 @@ QQC2.AbstractButton {
             horizontalAlignment: Text.AlignHCenter
             visible: text !== "" && !tile.compact
             text: tile.subtitle
-            font: Kirigami.Theme.smallFont
+            font: Theme.smallFont
             opacity: 0.6
             elide: Text.ElideRight
         }

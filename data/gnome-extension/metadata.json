@@ -1,0 +1,7 @@
+{
+  "uuid": "asus-helper@ludera-vi.github.com",
+  "name": "Asus-helper",
+  "description": "Asus-helper in GNOME: profile and keyboard lighting pop-ups (OSD), the window opens in the top-right corner under the tray.",
+  "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
+  "url": "https://github.com/ludera-vi/asus-helper"
+}

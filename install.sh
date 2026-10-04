@@ -1,7 +1,8 @@
 #!/bin/bash
-# Asus-helper installer (Arch and derivatives, KDE Plasma 6) / установщик.
-# Installs on a system without asusctl, power-profiles-daemon, supergfxctl, envycontrol — otherwise tells
-# what to remove. Run as a regular user: ./install.sh (sudo asks itself). Remove: ./uninstall.sh
+# Asus-helper installer (Arch and derivatives; KDE Plasma 6, GNOME and others) / установщик.
+# First finds out the desktop and the laptop, then talks only about them. Missing packages — offers to install,
+# asusctl, power-profiles-daemon, supergfxctl, envycontrol — offers to remove.
+# Run as a regular user: ./install.sh (sudo asks itself). Remove: ./uninstall.sh
 #         ./install.sh --update   update an existing install: no questions, no snapshot, restarts everything
 
 set -uo pipefail
@@ -22,6 +23,16 @@ OK="${GREEN}✔${R}"; WARN="${YELLOW}!${R}"; FAIL="${RED}✖${R}"; INFO="${BLUE}
 
 RESULTS=()
 FAILED=0
+installed_now=""
+# Что установщик поставил и удалил в системе — uninstall.sh предложит вернуть как было
+CHANGES="${XDG_STATE_HOME:-$HOME/.local/state}/asus-helper-install-changes"
+remember() {   # remember installed|removed пакеты…
+    local key=$1; shift
+    mkdir -p "$(dirname "$CHANGES")"
+    local old; old=$(grep "^$key=" "$CHANGES" 2>/dev/null | cut -d= -f2-)
+    local all; all=$(printf '%s\n' $old "$@" | sort -u | tr '\n' ' ')
+    { grep -v "^$key=" "$CHANGES" 2>/dev/null; echo "$key=${all% }"; } > "$CHANGES.new" && mv "$CHANGES.new" "$CHANGES"
+}
 
 # L "по-русски" "in English" — текст на выбранном языке
 L() { if [ "$UILANG" = ru ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
@@ -74,10 +85,28 @@ elif [ "$UILANG" = en ]; then
     export LC_MESSAGES=C.UTF-8; unset LANGUAGE
 fi
 
+# ---------- рабочий стол ----------
+# Всё дальше — только про него: KDE, GNOME или другой (niri, Hyprland, Sway, COSMIC…)
+desk_raw="${XDG_CURRENT_DESKTOP:-${XDG_SESSION_DESKTOP:-${DESKTOP_SESSION:-}}}"
+case "${desk_raw^^}" in
+    *KDE*|*PLASMA*) DESK=kde;   DESK_NAME="KDE Plasma" ;;
+    *GNOME*)        DESK=gnome; DESK_NAME="GNOME $(gnome-shell --version 2>/dev/null | grep -o '[0-9][0-9.]*' | head -1)" ;;
+    "")             DESK=none;  DESK_NAME="" ;;
+    *HYPRLAND*)     DESK=other; DESK_NAME=Hyprland ;;
+    *NIRI*)         DESK=other; DESK_NAME=niri ;;
+    *SWAY*)         DESK=other; DESK_NAME=Sway ;;
+    *COSMIC*)       DESK=other; DESK_NAME=COSMIC ;;
+    *)              DESK=other; DESK_NAME="${desk_raw%%:*}" ;;
+esac
+DESK_NAME="${DESK_NAME% }"
+APPINDICATOR=appindicatorsupport@rgcjonas.gmail.com
+GNOMEEXT=asus-helper@ludera-vi.github.com     # своё расширение: карточки GNOME и окно под треем
+
 # ---------- оформление окна ----------
+# Выбор есть только в KDE: «как в системе» — это цвета и стиль KDE. В других средах окно всегда в своей теме.
 APPCFG="${XDG_CONFIG_HOME:-$HOME/.config}/asus-helper/app.json"
 UITHEME=$(grep -o '"theme": *"[a-z]*"' "$APPCFG" 2>/dev/null | grep -o '[a-z]*"$' | tr -d '"')
-if [ -z "$UITHEME" ] || [ $UPDATE = 0 ]; then
+if [ "$DESK" = kde ] && { [ -z "$UITHEME" ] || [ $UPDATE = 0 ]; }; then
     echo
     echo "  ${B}$(L "Оформление окна" "Window appearance")${R}"
     echo "    1) $(L "Как в системе — цвета и стиль KDE" "System — KDE colours and style")"
@@ -124,24 +153,49 @@ model=$(cat /sys/class/dmi/id/product_name 2>/dev/null)
 if [[ "$vendor" == ASUS* ]]; then ok "$(L "Ноутбук" "Laptop"): $model"; else fail "$(L "Это не ASUS" "Not an ASUS") ($vendor)"; problems=1; fi
 if [ -e /sys/firmware/acpi/platform_profile ]; then ok "$(L "Режимы производительности (platform_profile)" "Performance profiles (platform_profile)")"
 else fail "$(L "Нет" "Missing") /sys/firmware/acpi/platform_profile"; problems=1; fi
-if [[ "${XDG_CURRENT_DESKTOP:-}" == *KDE* ]]; then ok "KDE Plasma${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}"
-else warn "$(L "Не KDE Plasma — окно и значок рассчитаны на Plasma 6 (демон и asus-helper-cli работают везде)" "Not KDE Plasma — the window and tray icon target Plasma 6 (the daemon and asus-helper-cli work anywhere)")"; fi
+case $DESK in
+    kde)   ok "KDE Plasma${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}" ;;
+    gnome) ok "$DESK_NAME${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}" ;;
+    other) ok "$(L "Рабочий стол" "Desktop"): $DESK_NAME${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}"
+           explain "$(L "Значок появится, если в панели есть трей (StatusNotifierItem — например, waybar с модулем tray)" "The icon appears if your bar has a tray (StatusNotifierItem — e.g. waybar with the tray module)")" ;;
+    none)  warn "$(L "Рабочий стол не определён (установка не из графического сеанса?) — демон и asus-helper-cli работают везде" "Desktop not detected (not installing from a graphical session?) — the daemon and asus-helper-cli work anywhere")" ;;
+esac
 if [ -d /sys/class/firmware-attributes/asus-armoury ]; then ok "$(L "Ядро с asus-armoury" "Kernel with asus-armoury")"
 else warn "$(L "Нет asus-armoury — лимиты мощности будут недоступны" "No asus-armoury — power limits will be unavailable")"; fi
 
-missing=()
-python3 -c 'import gi' 2>/dev/null || missing+=(python-gobject)
-python3 -c 'import PySide6' 2>/dev/null || missing+=(pyside6)
-command -v make >/dev/null || missing+=(make)
-command -v kscreen-doctor >/dev/null || missing+=(libkscreen)
-# окно: Kirigami, стиль KDE для QML, всплывающее окно у трея; названия видеокарт — база pci.ids
-[ -d /usr/lib/qt6/qml/org/kde/kirigami ] || missing+=(kirigami)
-[ -d /usr/lib/qt6/qml/org/kde/desktop ] || missing+=(qqc2-desktop-style)
-[ -d /usr/lib/qt6/qml/org/kde/layershell ] || missing+=(layer-shell-qt)
-[ -e /usr/share/hwdata/pci.ids ] || missing+=(hwdata)
-if [ ${#missing[@]} -eq 0 ]; then ok "$(L "Пакеты" "Packages"): python-gobject, pyside6, kscreen-doctor, kirigami, layer-shell-qt"
-else warn "$(L "Не хватает пакетов" "Missing packages"): ${missing[*]} — $(L "поставлю" "will install")"; fi
 [ $problems -eq 0 ] || { fail "$(L "Установка невозможна" "Installation is not possible")"; exit 1; }
+
+# Пакеты: общие для окна (Kirigami, layer-shell — их подключает окно в любой среде; названия видеокарт —
+# база pci.ids) и свои для рабочего стола
+need=(python-gobject pyside6 make kirigami layer-shell-qt hwdata)
+case $DESK in
+    kde)   need+=(libkscreen qqc2-desktop-style) ;;         # частота экрана, стиль KDE для окна
+    gnome) need+=(breeze-icons gnome-shell-extension-appindicator) ;;   # значки окна, трей в панели
+    *)     need+=(breeze-icons) ;;
+esac
+missing=()
+for p in "${need[@]}"; do pacman -Q "$p" >/dev/null 2>&1 || missing+=("$p"); done
+if [ ${#missing[@]} -eq 0 ]; then
+    ok "$(L "Пакеты" "Packages"): ${need[*]}"
+else
+    warn "$(L "Не хватает пакетов" "Missing packages"): ${B}${missing[*]}${R}"
+    [ $DESK = gnome ] && [[ " ${missing[*]} " == *" gnome-shell-extension-appindicator "* ]] &&
+        explain "$(L "gnome-shell-extension-appindicator — трей в верхней панели GNOME, без него значка не будет" "gnome-shell-extension-appindicator — the tray in the GNOME top bar, without it there is no icon")"
+    if ask "$(L "Установить их сейчас?" "Install them now?")"; then
+        sudo -v || exit 1
+        echo "### pacman -S ${missing[*]}" >> "$LOG"
+        if sudo pacman -S --needed --noconfirm "${missing[@]}" >> "$LOG" 2>&1; then
+            ok "$(L "Пакеты установлены" "Packages installed"): ${missing[*]}"
+            RESULTS+=("$OK $(L "Пакеты" "Packages") ${missing[*]}")
+            installed_now=" ${missing[*]} "
+            remember installed "${missing[@]}"
+        else
+            fail "$(L "Пакеты не установились" "Packages failed to install") ${D}($LOG)${R}"; exit 1
+        fi
+    else
+        fail "$(L "Без них Asus-helper не установить" "Asus-helper cannot be installed without them")"; exit 1
+    fi
+fi
 
 # Ставим только на чистую систему: эти программы делают то же самое и будут спорить с демоном
 conflicts=()
@@ -151,14 +205,36 @@ done
 old=()
 [ -e /usr/local/bin/gpu-eco ] && old+=("gpu-switch (gpu-eco)")
 [ -e "$HOME/.local/bin/asus-osd" ] && old+=("lighting_keyboard (asus-osd)")
-if [ ${#conflicts[@]} -gt 0 ] || [ ${#old[@]} -gt 0 ]; then
-    fail "$(L "Мешают другие программы управления ноутбуком:" "Other laptop control programs are in the way:")"
-    [ ${#conflicts[@]} -gt 0 ] && explain "$(L "пакеты" "packages"): ${conflicts[*]}  →  sudo pacman -Rns ${conflicts[*]}"
-    [ ${#old[@]} -gt 0 ] && explain "$(L "старые помощники" "old helpers"): ${old[*]}  →  $(L "их" "their") ./uninstall.sh"
-    explain "$(L "Удалите их и запустите установку снова." "Remove them and run the installer again.")"
+if [ ${#old[@]} -gt 0 ]; then
+    fail "$(L "Мешают старые помощники" "Old helpers are in the way"): ${old[*]}"
+    explain "$(L "Удалите их (их ./uninstall.sh) и запустите установку снова." "Remove them (their ./uninstall.sh) and run the installer again.")"
     exit 1
 fi
-ok "$(L "Конфликтующих программ нет" "No conflicting programs")"
+if [ ${#conflicts[@]} -gt 0 ]; then
+    warn "$(L "Мешают другие программы управления ноутбуком" "Other laptop control programs are in the way"): ${B}${conflicts[*]}${R}"
+    explain "$(L "Они делают то же самое и будут спорить с Asus-helper за вентиляторы, режимы и видеокарту." "They do the same job and would fight Asus-helper over fans, profiles and the GPU.")"
+    [[ " ${conflicts[*]} " == *" power-profiles-daemon "* || " ${conflicts[*]} " == *" tuned-ppd "* ]] &&
+        explain "$(L "Режимы питания в $( [ $DESK = none ] && echo "рабочем столе" || echo "$DESK_NAME") останутся: Asus-helper отвечает за них сам." "Power profiles in $( [ $DESK = none ] && echo "the desktop" || echo "$DESK_NAME") keep working: Asus-helper serves them itself.")"
+    if ask "$(L "Удалить их?" "Remove them?")"; then
+        sudo -v || exit 1
+        echo "### pacman -Rns ${conflicts[*]}" >> "$LOG"
+        sudo systemctl disable --now asusd.service supergfxd.service power-profiles-daemon.service tuned-ppd.service \
+            >> "$LOG" 2>&1
+        if sudo pacman -Rns --noconfirm "${conflicts[@]}" >> "$LOG" 2>&1; then
+            ok "$(L "Удалено" "Removed"): ${conflicts[*]}"
+            remember removed "${conflicts[@]}"
+            RESULTS+=("$OK $(L "Удалено" "Removed") ${conflicts[*]}")
+        else
+            fail "$(L "Не удалось удалить" "Could not remove") ${D}($LOG)${R}"
+            explain "$(L "Вручную" "By hand"): sudo pacman -Rns ${conflicts[*]}"
+            exit 1
+        fi
+    else
+        fail "$(L "Пока они установлены, Asus-helper не поставить" "Asus-helper cannot be installed while they are present")"; exit 1
+    fi
+else
+    ok "$(L "Конфликтующих программ нет" "No conflicting programs")"
+fi
 
 dev_daemon=$(pgrep -f '^python3 -m asushelper.daemon' || true)
 
@@ -167,11 +243,23 @@ if [ $UPDATE = 0 ]; then
 title "$(L "Что будет сделано" "What will be done")"
 info "$(L "Демон ${B}asus-helperd${R} — системная служба, стартует при загрузке" "Daemon ${B}asus-helperd${R} — a system service started at boot")"
 explain "/usr/local/lib/asus-helper, /usr/local/bin/asus-helper{d,-cli,}, prime-run, D-Bus, polkit"
-info "$(L "Значок ${B}Asus-helper${R} в трее при входе в систему, клавиша ROG открывает окно" "${B}Asus-helper${R} tray icon at login, the ROG key opens the window")"
+case $DESK in
+    gnome) info "$(L "Значок ${B}Asus-helper${R} в верхней панели GNOME при входе (расширение AppIndicator будет включено)" "${B}Asus-helper${R} icon in the GNOME top bar at login (the AppIndicator extension gets enabled)")"
+           info "$(L "Расширение GNOME ${B}Asus-helper${R}: карточки при смене режима и подсветки, окно — в правом верхнем углу под треем" "GNOME extension ${B}Asus-helper${R}: pop-ups on profile and lighting changes, the window opens top-right under the tray")"
+           explain "$(L "Клавиша ROG открывает окно: «Настройки → Клавиатура → Свои комбинации клавиш»" "The ROG key opens the window: Settings → Keyboard → Custom Shortcuts")" ;;
+    none)  info "$(L "Значок ${B}Asus-helper${R} в трее при входе в систему" "${B}Asus-helper${R} tray icon at login")" ;;
+    *)     info "$(L "Значок ${B}Asus-helper${R} в трее при входе в систему, клавиша ROG открывает окно" "${B}Asus-helper${R} tray icon at login, the ROG key opens the window")" ;;
+esac
 info "$(L "Настройки: /etc/asus-helper (если их нет — переносятся из /etc/asusd)" "Settings: /etc/asus-helper (imported from /etc/asusd if present)")"
 [ -n "$dev_daemon" ] && info "$(L "Пробный демон из dev-run.sh (сейчас запущен) будет остановлен" "The dev-run.sh daemon (running now) will be stopped")"
-info "$(L "Рабочий стол KDE — на встроенной видеокарте (если есть NVIDIA): так Eco включается без выхода из сеанса" "KDE desktop runs on the integrated GPU (if NVIDIA is present): then Eco works without logging out")"
-explain "$(L "Это решает демон при загрузке; без NVIDIA или в режиме MUX «только NVIDIA» ничего не меняется" "The daemon decides this at boot; without NVIDIA or with MUX in \"NVIDIA only\" nothing changes")"
+case $DESK in
+    kde)   info "$(L "Рабочий стол KDE — на встроенной видеокарте (если есть NVIDIA): так Eco включается без выхода из сеанса" "KDE desktop runs on the integrated GPU (if NVIDIA is present): then Eco works without logging out")" ;;
+    gnome) info "$(L "GNOME и экран входа GDM — на встроенной видеокарте (если есть NVIDIA): так Eco включается без выхода из сеанса" "GNOME and the GDM login screen run on the integrated GPU (if NVIDIA is present): then Eco works without logging out")" ;;
+esac
+if [ $DESK = kde ] || [ $DESK = gnome ]; then
+    explain "$(L "Это решает демон при загрузке; без NVIDIA или в режиме MUX «только NVIDIA» ничего не меняется" "The daemon decides this at boot; without NVIDIA or with MUX in \"NVIDIA only\" nothing changes")"
+    [ $DESK = gnome ] && explain "$(L "Мониторы, подключённые к выходам NVIDIA, в этом случае не работают" "Monitors connected to NVIDIA outputs do not work in this case")"
+fi
 echo
 ask "$(L "Продолжить?" "Continue?")" || { info "$(L "Ничего не изменено" "Nothing changed")"; exit 0; }
 
@@ -191,7 +279,6 @@ fi   # конец: только при обычной установке
 # ---------- 4. установка ----------
 title "$(L "Установка" "Installing")"
 sudo -v || exit 1
-[ ${#missing[@]} -eq 0 ] || step "$(L "Пакеты" "Packages") ${missing[*]}" sudo pacman -S --needed --noconfirm "${missing[@]}"
 
 if [ -n "$dev_daemon" ]; then
     # пробный демон из dev-run.sh — заменяется службой
@@ -232,7 +319,8 @@ reload_system() {
     systemctl --user daemon-reload &&
     { command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true; }
 }
-step "$(L "Перечитаны systemd, D-Bus, udev, меню KDE" "Reloaded systemd, D-Bus, udev, KDE menu")" reload_system
+if [ $DESK = kde ]; then step "$(L "Перечитаны systemd, D-Bus, udev, меню KDE" "Reloaded systemd, D-Bus, udev, KDE menu")" reload_system
+else step "$(L "Перечитаны systemd, D-Bus, udev" "Reloaded systemd, D-Bus, udev")" reload_system; fi
 
 if [ ! -e /etc/asus-helper/config.json ] && [ -d /etc/asusd ]; then
     step "$(L "Перенос настроек из /etc/asusd" "Imported settings from /etc/asusd")" sudo env PYTHONPATH="$LIB" python3 -m asushelper.cli import-asusd
@@ -251,7 +339,7 @@ os.makedirs(os.path.dirname(path), exist_ok=True)
 json.dump(data, open(path, "w"), indent=2)
 PY
 }
-step "$(L "Оформление: " "Appearance: ")$( [ "$UITHEME" = original ] && L "оригинальное" "original" || L "как в системе" "system")" save_theme
+[ $DESK = kde ] && step "$(L "Оформление: " "Appearance: ")$( [ "$UITHEME" = original ] && L "оригинальное" "original" || L "как в системе" "system")" save_theme
 
 step "$(L "Демон asus-helperd включён" "asus-helperd daemon enabled")" sudo systemctl enable asus-helperd.service
 step "$(L "Демон запущен с новой версией" "Daemon started with the new version")" sudo systemctl restart asus-helperd.service
@@ -260,9 +348,41 @@ step "$(L "Демон запущен с новой версией" "Daemon start
 # Eco заработает после одного выхода из сеанса
 sleep 2
 need_relogin=0
-if grep -q KWIN_DRM_DEVICES /run/asus-helper/kwin.env 2>/dev/null &&
+if [ $DESK = kde ] && grep -q KWIN_DRM_DEVICES /run/asus-helper/kwin.env 2>/dev/null &&
    "$BIN/asus-helper-cli" gpu 2>/dev/null | grep -q kwin_wayland; then
     need_relogin=1
+fi
+# GNOME так же: тег udev и окружение gnome-shell действуют с нового входа
+if [ $DESK = gnome ] && [ -e /run/asus-helper/mutter-igpu-only ] &&
+   "$BIN/asus-helper-cli" gpu 2>/dev/null | grep -qE 'gnome-shell|Xwayland'; then
+    need_relogin=1
+fi
+
+# GNOME: трей — расширение AppIndicator, карточки и окно под треем — своё расширение Asus-helper.
+# Только что установленные GNOME увидит после нового входа, поэтому включаем их в настройках (подхватятся при
+# входе), а если GNOME их уже знает — сразу
+tray_after_relogin=0
+enable_extensions() {
+    gsettings set org.gnome.shell disable-user-extensions false &&
+    python3 - "$APPINDICATOR" "$GNOMEEXT" <<'PY'
+import sys
+from gi.repository import Gio
+s = Gio.Settings.new("org.gnome.shell")
+for uuid in sys.argv[1:]:
+    s.set_strv("disabled-extensions", [e for e in s.get_strv("disabled-extensions") if e != uuid])
+    if uuid not in s.get_strv("enabled-extensions"):
+        s.set_strv("enabled-extensions", s.get_strv("enabled-extensions") + [uuid])
+Gio.Settings.sync()
+PY
+    gnome-extensions enable "$APPINDICATOR" 2>/dev/null
+    gnome-extensions enable "$GNOMEEXT" 2>/dev/null
+    true
+}
+if [ $DESK = gnome ]; then
+    step "$(L "Расширения GNOME включены: трей (AppIndicator) и Asus-helper (карточки, окно под треем)" "GNOME extensions enabled: tray (AppIndicator) and Asus-helper (pop-ups, window under the tray)")" enable_extensions
+    for e in "$APPINDICATOR" "$GNOMEEXT"; do
+        gnome-extensions info "$e" 2>/dev/null | grep -qiE 'state: *(enabled|active)' || tray_after_relogin=1
+    done
 fi
 
 title "$(L "Значок и окно" "Tray icon and window")"
@@ -271,7 +391,11 @@ pkill -f '^python3 -m asushelper.app' 2>/dev/null
 pkill -f '^python3 -m asushelper.agent' 2>/dev/null
 sleep 1
 ( setsid "$BIN/asus-helper" >/dev/null 2>&1 & )
-ok "$(L "Asus-helper запущен — значок в трее" "Asus-helper started — icon in the tray")"
+if [ $DESK = gnome ] && [ $tray_after_relogin = 1 ]; then
+    ok "$(L "Asus-helper запущен — значок появится в верхней панели после нового входа (окно — из меню приложений)" "Asus-helper started — the icon appears in the top bar after logging in again (the window opens from the app menu)")"
+    need_relogin=1
+elif [ $DESK = gnome ]; then ok "$(L "Asus-helper запущен — значок в верхней панели" "Asus-helper started — icon in the top bar")"
+else ok "$(L "Asus-helper запущен — значок в трее" "Asus-helper started — icon in the tray")"; fi
 
 # ---------- 8. проверка ----------
 title "$(L "Проверка" "Verification")"
@@ -289,7 +413,10 @@ title "$(L "Итог" "Summary")"
 for r in "${RESULTS[@]}"; do echo "  $r"; done
 echo
 if [ $FAILED -eq 0 ]; then
-    echo "  ${GREEN}${B}$(L "Готово." "Done.")${R} $(L "Значок Asus-helper — в трее; клавиша ROG открывает окно." "The Asus-helper icon is in the tray; the ROG key opens the window.")"
+    case $DESK in
+        gnome) echo "  ${GREEN}${B}$(L "Готово." "Done.")${R} $(L "Значок Asus-helper — в верхней панели GNOME; клавиша ROG открывает окно." "The Asus-helper icon is in the GNOME top bar; the ROG key opens the window.")" ;;
+        *)     echo "  ${GREEN}${B}$(L "Готово." "Done.")${R} $(L "Значок Asus-helper — в трее; клавиша ROG открывает окно." "The Asus-helper icon is in the tray; the ROG key opens the window.")" ;;
+    esac
 else
     echo "  ${YELLOW}${B}$(L "Установлено с ошибками." "Installed with errors.")${R} $(L "Журнал" "Log"): $LOG"
 fi
@@ -303,7 +430,24 @@ EOF
 
 # Рабочий стол запущен до установки и держит NVIDIA: настройка «KDE только на встроенной видеокарте»
 # подействует со следующего входа. Без этого Eco не выключит карту — говорим прямо и предлагаем выйти.
-if [ $FAILED -eq 0 ] && [ $need_relogin = 1 ]; then
+if [ $FAILED -eq 0 ] && [ $need_relogin = 1 ] && [ $DESK = gnome ]; then
+    echo "  ${YELLOW}${B}$(L "Нужен один выход из сеанса." "One log out is needed.")${R}"
+    if [ -e /run/asus-helper/mutter-igpu-only ] && "$BIN/asus-helper-cli" gpu 2>/dev/null | grep -qE 'gnome-shell|Xwayland'; then
+        explain "$(L "GNOME запустился до установки и сейчас работает на NVIDIA — выключить её (Eco) нельзя." \
+                     "GNOME started before the install and runs on NVIDIA now — it cannot be turned off (Eco).")"
+        explain "$(L "После выхода и входа GNOME будет на встроенной видеокарте, и Eco заработает. Это нужно один раз." \
+                     "After logging out and back in GNOME uses the integrated GPU and Eco works. Needed once.")"
+    fi
+    [ $tray_after_relogin = 1 ] &&
+        explain "$(L "Расширения GNOME загрузит при новом входе — тогда появятся значок в панели и карточки режима и подсветки." \
+                     "GNOME loads the extensions at the next login — then the top-bar icon and the profile/lighting pop-ups appear.")"
+    if command -v gnome-session-quit >/dev/null && ask "$(L "Выйти из сеанса сейчас? (сначала сохрани открытые документы)" "Log out now? (save your open documents first)")" Y; then
+        gnome-session-quit --logout >/dev/null 2>&1 &
+    else
+        explain "$(L "Выйди позже сам: меню в правом верхнем углу → Выключение → Выйти." "Log out later yourself: top-right menu → Power Off → Log Out.")"
+    fi
+    echo
+elif [ $FAILED -eq 0 ] && [ $need_relogin = 1 ]; then
     echo "  ${YELLOW}${B}$(L "Нужен один выход из сеанса." "One log out is needed.")${R}"
     explain "$(L "Рабочий стол KDE запустился до установки и сейчас работает на NVIDIA — выключить её (Eco) нельзя." \
                  "The KDE desktop started before the install and runs on NVIDIA now — it cannot be turned off (Eco).")"

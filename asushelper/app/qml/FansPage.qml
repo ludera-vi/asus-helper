@@ -69,7 +69,7 @@ ColumnLayout {
                 QQC2.Label {
                     Layout.fillWidth: true
                     text: Theme.tr("лимиты мощности, Turbo Boost, энергосбережение")
-                    font: Kirigami.Theme.smallFont
+                    font: Theme.smallFont
                     opacity: 0.6
                     elide: Text.ElideRight
                 }

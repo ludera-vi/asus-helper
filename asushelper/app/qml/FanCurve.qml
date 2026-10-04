@@ -56,7 +56,7 @@ Item {
             const ctx = getContext("2d")
             ctx.reset()
             const text = Kirigami.Theme.textColor
-            ctx.font = Math.round(Kirigami.Theme.smallFont.pixelSize || 11) + "px sans-serif"
+            ctx.font = Math.round(Theme.smallFont.pixelSize || 11) + "px sans-serif"
 
             // сетка: 25/50/75/100 % и каждые 20 °C
             ctx.strokeStyle = Qt.alpha(text, 0.12)
@@ -126,7 +126,7 @@ Item {
         x: Math.min(editor.width - width, Math.max(0, editor.xOf(editor.temp[i] || 0) - width / 2))
         y: Math.max(0, editor.yOf(editor.pwm[i] || 0) - height - 8)
         text: i >= 0 ? editor.temp[i] + " °C → " + editor.pct(editor.pwm[i]) + "%" : ""
-        font: Kirigami.Theme.smallFont
+        font: Theme.smallFont
         padding: 3
         background: Rectangle {
             color: Kirigami.Theme.backgroundColor

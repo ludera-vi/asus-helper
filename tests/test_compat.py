@@ -272,6 +272,59 @@ class GpuCompatTest(Base):
             self.assertFalse(gpu.is_protected(4242, "brave"))
 
 
+# ---------- GNOME: рабочий стол только на встроенной видеокарте ----------
+class GnomeTest(Base):
+    def hybrid(self):
+        """NVIDIA включена, MUX в гибриде, экран ведёт Intel (card1), у NVIDIA — card0 (226:0)."""
+        add_nvidia()
+        w(ARM + "/dgpu_disable/current_value", 0)
+        w("/sys/class/drm/card1/device/vendor", "0x8086")
+        os.makedirs(ROOT + "/dev/dri", exist_ok=True)
+        rm("/dev/dri/igpu")
+        os.symlink(ROOT + "/sys/class/drm/card1", ROOT + "/dev/dri/igpu")
+        w(NV + "/drm/card0/dev", "226:0")
+        w("/sys/class/drm/card0/dev", "226:0")
+        w("/sys/class/drm/card0/uevent", "")
+
+    def test_hybrid_gnome_igpu_only(self):
+        self.hybrid()
+        w("/run/udev/data/c226:0", "G:mutter-device-ignore")   # udev уже поставил тег — ждать нечего
+        gpu.write_gnome_env()
+        self.assertTrue(os.path.exists(ROOT + gpu.MUTTER_FLAG))
+        env = read(gpu.GNOME_ENV)
+        self.assertIn("__GLX_VENDOR_LIBRARY_NAME=mesa", env)
+        self.assertNotIn("KWIN", env)
+        self.assertEqual(read("/sys/class/drm/card0/uevent"), "")  # тег есть — карту не перечитываем
+
+    def test_card_reread_when_tag_missing(self):
+        self.hybrid()
+        with mock.patch.object(gpu.time, "sleep"), mock.patch.object(gpu.time, "monotonic", side_effect=[0, 0, 5]):
+            gpu.write_gnome_env()
+        self.assertEqual(read("/sys/class/drm/card0/uevent"), "change")
+
+    def test_no_flag_without_nvidia_or_in_nvidia_mux(self):
+        self.hybrid()
+        w(ARM + "/gpu_mux_mode/current_value", 0)            # MUX «только NVIDIA»
+        w(gpu.MUTTER_FLAG, "")                                # остался с прошлого запуска
+        gpu.write_gnome_env()
+        self.assertFalse(os.path.exists(ROOT + gpu.MUTTER_FLAG))
+        self.assertNotIn("mesa", read(gpu.GNOME_ENV))
+        rm(ARM + "/dgpu_disable")
+        gpu.write_gnome_env()
+        self.assertFalse(os.path.exists(ROOT + gpu.MUTTER_FLAG))
+
+    def test_desktop_on_nvidia_blocks_eco(self):
+        """Рабочий стол вывел экран через NVIDIA — не снимаем карту с шины (ядро зависло бы), а объясняем."""
+        add_nvidia()
+        w(ARM + "/dgpu_disable/current_value", 0)
+        with mock.patch.object(gpu, "desktop_on_screen", return_value=["gnome-shell"]), \
+             mock.patch.object(gpu, "_remove_from_bus") as remove:
+            with self.assertRaises(gpu.GpuError) as e:
+                gpu.turn_off()
+        self.assertIn("gnome-shell", str(e.exception))
+        remove.assert_not_called()
+
+
 # ---------- питание ----------
 class PowerSupplyTest(Base):
     def test_usb_c_charging_counts_as_ac(self):

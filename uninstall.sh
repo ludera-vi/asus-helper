@@ -67,6 +67,20 @@ command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1
 # клавиша окна в «Комбинациях клавиш» KDE
 command -v qdbus6 >/dev/null && qdbus6 org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel.unregister \
     asus-helper toggle >/dev/null 2>&1
+# клавиша окна в «Своих комбинациях клавиш» GNOME
+python3 - <<'PY' 2>/dev/null
+from gi.repository import Gio
+schema, path = "org.gnome.settings-daemon.plugins.media-keys", "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/asus-helper/"
+src = Gio.SettingsSchemaSource.get_default()
+if src and src.lookup(schema, True):
+    keys = Gio.Settings.new(schema)
+    if path in keys.get_strv("custom-keybindings"):
+        keys.set_strv("custom-keybindings", [p for p in keys.get_strv("custom-keybindings") if p != path])
+        entry = Gio.Settings.new_with_path(schema + ".custom-keybinding", path)
+        for k in ("name", "command", "binding"):
+            entry.reset(k)
+        Gio.Settings.sync()
+PY
 rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/asus-helper"
 ok "$(L "Значок, ярлыки и клавиша окна убраны" "Tray icon, launchers and window key removed")"
 
@@ -93,6 +107,64 @@ if [ -L /dev/dri/igpu ] && ! { [ -n "$kwin" ] && sudo cat /proc/$kwin/environ 2>
     sudo rm -f /dev/dri/igpu
 fi
 ok "$(L "Настройка рабочего стола и prime-run убраны" "Desktop GPU setting and prime-run removed")"
+
+# расширения GNOME, которые включил установщик (своё — всегда, трей — если его ставил установщик)
+CHANGES="${XDG_STATE_HOME:-$HOME/.local/state}/asus-helper-install-changes"
+inst=$(grep '^installed=' "$CHANGES" 2>/dev/null | cut -d= -f2-)
+removed=$(grep '^removed=' "$CHANGES" 2>/dev/null | cut -d= -f2-)
+drop="asus-helper@ludera-vi.github.com"
+[[ " $inst " == *" gnome-shell-extension-appindicator "* ]] && drop="$drop appindicatorsupport@rgcjonas.gmail.com"
+python3 - $drop <<'PY' 2>/dev/null
+import sys
+from gi.repository import Gio
+src = Gio.SettingsSchemaSource.get_default()
+if src and src.lookup("org.gnome.shell", True):
+    s = Gio.Settings.new("org.gnome.shell")
+    s.set_strv("enabled-extensions", [e for e in s.get_strv("enabled-extensions") if e not in sys.argv[1:]])
+    Gio.Settings.sync()
+PY
+
+# ---------- 3a. пакеты: что поставил и что удалил установщик ----------
+still=()
+for p in $inst; do pacman -Q "$p" >/dev/null 2>&1 && still+=("$p"); done
+if [ ${#still[@]} -gt 0 ]; then
+    echo "  $(L "Установщик ставил пакеты" "The installer added packages"): ${still[*]}"
+    read -rp "$(L "Удалить их (и их зависимости, если они больше никому не нужны)? [Д/н] " "Remove them (and their dependencies no longer needed)? [Y/n] ")" a
+    if yes_default "$a"; then
+        if sudo pacman -Rns --noconfirm "${still[@]}" >/dev/null 2>&1; then
+            ok "$(L "Удалено" "Removed"): ${still[*]}"
+        else
+            # какой-то пакет нужен другой программе (например, рабочему столу) — удаляем остальные по одному
+            kept=()
+            for p in "${still[@]}"; do sudo pacman -Rns --noconfirm "$p" >/dev/null 2>&1 || kept+=("$p"); done
+            ok "$(L "Удалено, кроме нужных другим программам" "Removed, except those needed by other programs")${kept[*]:+: ${kept[*]}}"
+        fi
+    fi
+fi
+back=()
+for p in $removed; do pacman -Q "$p" >/dev/null 2>&1 || back+=("$p"); done
+if [ ${#back[@]} -gt 0 ]; then
+    echo "  $(L "Установщик удалял" "The installer removed"): ${back[*]}"
+    read -rp "$(L "Вернуть их? [Д/н] " "Bring them back? [Y/n] ")" a
+    if yes_default "$a"; then
+        if sudo pacman -S --needed --noconfirm "${back[@]}" >/dev/null 2>&1; then
+            # службы вернувшихся пакетов: пакет → служба
+            for p in "${back[@]}"; do
+                case $p in
+                    power-profiles-daemon|tuned-ppd) svc=$p ;;
+                    asusctl) svc=asusd ;;
+                    supergfxctl) svc=supergfxd ;;
+                    *) continue ;;
+                esac
+                sudo systemctl enable --now "$svc.service" >/dev/null 2>&1
+            done
+            ok "$(L "Возвращено" "Restored"): ${back[*]}"
+        else
+            warn "$(L "Не вернулись — вручную" "Not restored — by hand"): sudo pacman -S ${back[*]}"
+        fi
+    fi
+fi
+rm -f "$CHANGES"
 
 # ---------- 4. настройки ----------
 if [ $KEEP_CONFIG = 1 ]; then

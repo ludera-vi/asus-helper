@@ -8,6 +8,7 @@
 """
 import copy
 import json
+import os
 import subprocess
 import sys
 import time
@@ -122,10 +123,20 @@ def test_profiles(s0, c0):
     ppd = bus.call_sync("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles", "org.freedesktop.DBus.Properties",
                         "Get", GLib.Variant("(ss)", ("net.hadess.PowerProfiles", "ActiveProfile")), None,
                         Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
-    check("KDE видит режим", ppd == {"quiet": "power-saver", "balanced": "balanced", "performance": "performance"}[r], ppd)
-    kde = subprocess.run(["qdbus6", "org.kde.Solid.PowerManagement", "/org/kde/Solid/PowerManagement/Actions/PowerProfile",
-                          "profileChoices"], capture_output=True, text=True).stdout.split()
-    check("виджет батареи KDE видит все три режима", len(kde) == 3, " ".join(kde))
+    gnome = "GNOME" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    check("GNOME видит режим" if gnome else "KDE видит режим",
+          ppd == {"quiet": "power-saver", "balanced": "balanced", "performance": "performance"}[r], ppd)
+    if gnome:
+        # меню питания GNOME берёт список режимов из свойства Profiles
+        profiles = bus.call_sync("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles", "org.freedesktop.DBus.Properties",
+                                 "Get", GLib.Variant("(ss)", ("net.hadess.PowerProfiles", "Profiles")), None,
+                                 Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
+        names = [p["Profile"] for p in profiles]
+        check("меню питания GNOME видит все три режима", len(names) == 3, " ".join(names))
+    else:
+        kde = subprocess.run(["qdbus6", "org.kde.Solid.PowerManagement", "/org/kde/Solid/PowerManagement/Actions/PowerProfile",
+                              "profileChoices"], capture_output=True, text=True).stdout.split()
+        check("виджет батареи KDE видит все три режима", len(kde) == 3, " ".join(kde))
 
 
 def test_curves_independent(s0, c0):

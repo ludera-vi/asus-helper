@@ -95,6 +95,21 @@ def panel_on_top() -> bool:
     return False
 
 
+def desktop() -> str:
+    """Рабочий стол сеанса: kde, gnome или другое (niri, hyprland…) — в нижнем регистре."""
+    d = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    return "kde" if "KDE" in d else "gnome" if "GNOME" in d else d.split(":")[0].lower()
+
+
+def use_breeze_icons(theme: str) -> None:
+    """Вне KDE (GNOME — Adwaita) нужных значков нет: берём Breeze, если он установлен. В оригинальной
+    (тёмной) теме — Breeze Dark, светлые значки на тёмном."""
+    name = "breeze" if theme == themes.SYSTEM else "breeze-dark"
+    if any(os.path.exists(f"{d}/icons/{name}/index.theme")
+           for d in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")):
+        QIcon.setThemeName(name)
+
+
 def already_running(session: Gio.DBusConnection) -> bool:
     """Если приложение уже запущено — попросить его открыть окно и выйти."""
     try:
@@ -199,6 +214,9 @@ def main() -> int:
         app.setStyle("Fusion")                       # и меню значка в трее — в той же теме
         app.setPalette(themes.original_palette())
     log.info(_("оформление: %s (%s)"), theme, QQuickStyle.name())
+    session_desktop = desktop()
+    if session_desktop != "kde":
+        use_breeze_icons(theme)
 
     system = Gio.bus_get_sync(Gio.BusType.SYSTEM)
     backend = Backend(system, theme)
@@ -208,7 +226,7 @@ def main() -> int:
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("originalColors", themes.ORIGINAL_COLORS)
-    engine.setInitialProperties({"anchorTop": panel_on_top()})
+    engine.setInitialProperties({"anchorTop": panel_on_top(), "movable": session_desktop == "gnome"})
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("qml") / "Main.qml")))
     if not engine.rootObjects():
         log.error(_("окно не загрузилось (ошибки QML выше)"))
@@ -223,9 +241,16 @@ def main() -> int:
                             lambda *a: (tray.toggle(), a[-1].return_value(None)), None, None)
     Gio.bus_own_name_on_connection(session, APP_BUS_NAME, Gio.BusNameOwnerFlags.NONE, None, None)
 
-    # клавиша ROG (или назначенная в настройках KDE) открывает окно
-    from .hotkey import GlobalShortcut
-    app.shortcut = GlobalShortcut(session, tray.toggle)
+    # клавиша ROG (или назначенная в настройках KDE / GNOME) открывает окно
+    if session_desktop == "gnome":
+        from .hotkey import gnome_shortcut
+        gnome_shortcut()
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            log.warning(_("в GNOME нет трея: нужно расширение AppIndicator (gnome-shell-extension-appindicator); "
+                          "окно открывается из меню приложений и клавишей ROG"))
+    else:
+        from .hotkey import GlobalShortcut
+        app.shortcut = GlobalShortcut(session, tray.toggle)
 
     if args.show:
         tray.toggle()

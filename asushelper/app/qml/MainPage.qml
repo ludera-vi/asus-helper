@@ -74,7 +74,7 @@ ColumnLayout {
             QQC2.Label {
                 visible: autoProfile.checked
                 text: Theme.tr("от сети: ") + Theme.profileName(page.st.profile_on_ac) + Theme.tr("  ·  от батареи: ") + Theme.profileName(page.st.profile_on_battery)
-                font: Kirigami.Theme.smallFont
+                font: Theme.smallFont
                 opacity: 0.7
             }
         }
@@ -144,7 +144,7 @@ ColumnLayout {
             Layout.fillWidth: true
             visible: text !== ""
             text: [page.gpu.igpu_model, page.gpu.dgpu_model].filter(m => !!m).join("  ·  ")
-            font: Kirigami.Theme.smallFont
+            font: Theme.smallFont
             opacity: 0.55
             elide: Text.ElideRight
         }
@@ -181,7 +181,7 @@ ColumnLayout {
             Layout.fillWidth: true
             visible: !page.gpu.error && (page.gpu.holders || []).length > 0
             text: Theme.tr("Держат %1: ").arg(page.dgpu) + (page.gpu.holders || []).join(", ")
-            font: Kirigami.Theme.smallFont
+            font: Theme.smallFont
             opacity: 0.7
             elide: Text.ElideRight
         }
@@ -414,7 +414,7 @@ ColumnLayout {
                 text: modelData.toUpperCase()
                 checkable: true
                 checked: backend.language === modelData
-                font: Kirigami.Theme.smallFont
+                font: Theme.smallFont
                 onClicked: if (backend.language !== modelData) backend.setLanguage(modelData)
                 QQC2.ToolTip.visible: hovered
                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
@@ -423,7 +423,7 @@ ColumnLayout {
         }
         QQC2.Label {
             text: page.st.version ? "v" + page.st.version : ""
-            font: Kirigami.Theme.smallFont
+            font: Theme.smallFont
             opacity: 0.5
         }
     }

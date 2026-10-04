@@ -70,7 +70,7 @@ ColumnLayout {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    QQC2.Label { text: limit.names[0]; Layout.fillWidth: true }
+                    QQC2.Label { text: limit.names[0]; Layout.fillWidth: true; elide: Text.ElideRight }
                     QQC2.Label {
                         text: Math.round(slider.value) + limit.names[2] + (limit.mine === undefined ? "  (BIOS)" : "")
                         font.weight: Font.DemiBold
@@ -89,7 +89,7 @@ ColumnLayout {
                 }
                 QQC2.Label {
                     text: limit.names[1] + "  ·  " + limit.info.min + "–" + limit.info.max + limit.names[2]
-                    font: Kirigami.Theme.smallFont
+                    font: Theme.smallFont
                     opacity: 0.6
                     Layout.fillWidth: true
                     elide: Text.ElideRight
@@ -103,11 +103,14 @@ ColumnLayout {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
-                QQC2.Label { text: Theme.tr("Turbo Boost процессора") }
+                QQC2.Label { text: Theme.tr("Turbo Boost процессора"); Layout.fillWidth: true; elide: Text.ElideRight }
                 QQC2.Label {
+                    // не помещается в строку (крупный шрифт GNOME) — переносится, а не раздвигает окно
                     text: Theme.tr("выключен — холоднее и тише, но медленнее в тяжёлых задачах")
-                    font: Kirigami.Theme.smallFont
+                    font: Theme.smallFont
                     opacity: 0.6
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                 }
             }
             QQC2.Switch {
@@ -120,7 +123,7 @@ ColumnLayout {
         RowLayout {
             Layout.fillWidth: true
             visible: (page.st.epp_choices || []).length > 0     // процессор поддерживает EPP
-            QQC2.Label { text: Theme.tr("Энергосбережение CPU (EPP)"); Layout.fillWidth: true }
+            QQC2.Label { text: Theme.tr("Энергосбережение CPU (EPP)"); Layout.fillWidth: true; elide: Text.ElideRight }
             QQC2.ComboBox {
                 id: epp
                 readonly property var choices: ["", ...(page.st.epp_choices || []).filter(c => c !== "default")]

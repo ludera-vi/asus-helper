@@ -68,7 +68,7 @@ Item {
             const ctx = getContext("2d")
             ctx.reset()
             const text = Kirigami.Theme.textColor
-            ctx.font = Math.round(Kirigami.Theme.smallFont.pixelSize || 11) + "px sans-serif"
+            ctx.font = Math.round(Theme.smallFont.pixelSize || 11) + "px sans-serif"
             ctx.lineWidth = 1
 
             // горизонтальные линии: низ, середина, верх
@@ -136,7 +136,7 @@ Item {
         x: Math.min(chart.width - width, Math.max(chart.padL, chart.hoverX + 8))
         y: chart.padT
         padding: 3
-        font: Kirigami.Theme.smallFont
+        font: Theme.smallFont
         text: {
             if (chart.hoverIndex < 0) return ""
             const ago = Math.round((chart.now - chart.times[chart.hoverIndex]) / 60)

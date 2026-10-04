@@ -125,7 +125,7 @@ ColumnLayout {
         QQC2.Label {
             Layout.fillWidth: true
             wrapMode: Text.Wrap
-            font: Kirigami.Theme.smallFont
+            font: Theme.smallFont
             opacity: 0.75
             text: {
                 const hs = healthSection.health

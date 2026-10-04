@@ -16,6 +16,7 @@ DBUSDIR    ?= $(DATADIR)/dbus-1/system.d
 POLKITDIR  ?= $(DATADIR)/polkit-1/actions
 AUTOSTARTDIR ?= $(SYSCONFDIR)/xdg/autostart
 PYTHON     ?= /usr/bin/python3
+GNOMEEXT    = asus-helper@ludera-vi.github.com
 
 COMMANDS = asus-helperd:asushelper.daemon asus-helper:asushelper.app \
            asus-helper-cli:asushelper.cli asus-helper-agent:asushelper.agent
@@ -37,7 +38,11 @@ install:
 	install -Dm755 data/prime-run "$(DESTDIR)$(BINDIR)/prime-run"
 	sed 's|@BINDIR@|$(BINDIR)|' data/asus-helperd.service | install -Dm644 /dev/stdin "$(DESTDIR)$(UNITDIR)/asus-helperd.service"
 	install -Dm644 data/asus-helper-kwin.conf "$(DESTDIR)$(USERUNITDIR)/plasma-kwin_wayland.service.d/asus-helper.conf"
+	install -Dm644 data/asus-helper-gnome-shell.conf "$(DESTDIR)$(USERUNITDIR)/org.gnome.Shell@.service.d/asus-helper.conf"
+	install -Dm644 data/asus-helper-gdm.conf "$(DESTDIR)$(UNITDIR)/gdm.service.d/asus-helper.conf"
 	install -Dm644 data/61-asus-helper-igpu.rules "$(DESTDIR)$(UDEVDIR)/61-asus-helper-igpu.rules"
+	install -Dm644 data/61-asus-helper-mutter.rules "$(DESTDIR)$(UDEVDIR)/61-asus-helper-mutter.rules"
+	install -Dm644 -t "$(DESTDIR)$(DATADIR)/gnome-shell/extensions/$(GNOMEEXT)" data/gnome-extension/metadata.json data/gnome-extension/extension.js
 	install -Dm644 data/org.asushelper.Daemon.conf "$(DESTDIR)$(DBUSDIR)/org.asushelper.Daemon.conf"
 	install -Dm644 data/org.asushelper.policy "$(DESTDIR)$(POLKITDIR)/org.asushelper.policy"
 	install -Dm644 data/asus-helper.desktop "$(DESTDIR)$(DATADIR)/applications/asus-helper.desktop"
@@ -47,18 +52,23 @@ install:
 	install -Dm644 README.ru.md "$(DESTDIR)$(DATADIR)/doc/asus-helper/README.ru.md"
 
 uninstall:
-	rm -rf "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(DATADIR)/doc/asus-helper"
+	rm -rf "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(DATADIR)/doc/asus-helper" \
+	       "$(DESTDIR)$(DATADIR)/gnome-shell/extensions/$(GNOMEEXT)"
 	for c in $(COMMANDS); do rm -f "$(DESTDIR)$(BINDIR)/$${c%%:*}"; done
 	rm -f "$(DESTDIR)$(BINDIR)/prime-run" \
 	      "$(DESTDIR)$(UNITDIR)/asus-helperd.service" \
 	      "$(DESTDIR)$(USERUNITDIR)/plasma-kwin_wayland.service.d/asus-helper.conf" \
+	      "$(DESTDIR)$(USERUNITDIR)/org.gnome.Shell@.service.d/asus-helper.conf" \
+	      "$(DESTDIR)$(UNITDIR)/gdm.service.d/asus-helper.conf" \
 	      "$(DESTDIR)$(UDEVDIR)/61-asus-helper-igpu.rules" \
+	      "$(DESTDIR)$(UDEVDIR)/61-asus-helper-mutter.rules" \
 	      "$(DESTDIR)$(DBUSDIR)/org.asushelper.Daemon.conf" \
 	      "$(DESTDIR)$(POLKITDIR)/org.asushelper.policy" \
 	      "$(DESTDIR)$(DATADIR)/applications/asus-helper.desktop" \
 	      "$(DESTDIR)$(AUTOSTARTDIR)/asus-helper.desktop" \
 	      "$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/asus-helper.svg"
 	-rmdir "$(DESTDIR)$(USERUNITDIR)/plasma-kwin_wayland.service.d" 2>/dev/null
+	-rmdir "$(DESTDIR)$(USERUNITDIR)/org.gnome.Shell@.service.d" "$(DESTDIR)$(UNITDIR)/gdm.service.d" 2>/dev/null
 
 test:
 	$(PYTHON) -m unittest discover -s tests -t .

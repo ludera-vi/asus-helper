@@ -416,5 +416,9 @@
  "Eco: закрыть программы на NVIDIA и выключить её — так ответили": "Eco: close programs on NVIDIA and turn it off — as answered",
  "Чтобы выключить NVIDIA (Eco), нужно закрыть: {0}. Закрыть и выключить сейчас или подождать, пока вы закроете сами?": "To turn NVIDIA off (Eco), {0} must be closed. Close it and turn off now, or wait until you close it yourself?",
  "NVIDIA занята: {0}. Выключится, когда их закроете.": "NVIDIA is busy: {0}. It turns off once you close them.",
- "Закрыть сразу: asus-helper-cli gpu eco --force": "Close right away: asus-helper-cli gpu eco --force"
+ "Закрыть сразу: asus-helper-cli gpu eco --force": "Close right away: asus-helper-cli gpu eco --force",
+ "# Asus-helper: GNOME только на встроенной видеокарте (см. gpu.py)\n": "# Asus-helper: GNOME on the integrated GPU only (see gpu.py)\n",
+ "рабочий стол GNOME: %s": "GNOME desktop: %s",
+ "рабочий стол ({0}) запущен на NVIDIA — выключить её сейчас нельзя. Выйдите из сеанса и войдите снова: после этого он будет на встроенной видеокарте": "the desktop ({0}) runs on NVIDIA — it cannot be turned off now. Log out and back in: then the desktop uses the integrated GPU",
+ "в GNOME нет трея: нужно расширение AppIndicator (gnome-shell-extension-appindicator); окно открывается из меню приложений и клавишей ROG": "GNOME has no tray: the AppIndicator extension is needed (gnome-shell-extension-appindicator); the window opens from the app menu and with the ROG key"
 }

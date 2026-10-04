@@ -1,0 +1,4 @@
+# Asus-helper: GNOME (mutter) и экран входа GDM не открывают NVIDIA, чтобы она выключалась (Eco) без выхода из
+# сеанса. Тег ставится, только пока демон создал /run/asus-helper/mutter-igpu-only (есть NVIDIA, MUX в гибриде,
+# экран ведёт встроенная видеокарта). Нет файла — GNOME работает со всеми видеокартами, как обычно.
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", ATTRS{vendor}=="0x10de", TEST=="/run/asus-helper/mutter-igpu-only", TAG+="mutter-device-ignore"

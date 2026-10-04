@@ -34,7 +34,7 @@ ColumnLayout {
         Layout.fillWidth: true
         visible: tabs.profile !== tabs.current
         wrapMode: Text.Wrap
-        font: Kirigami.Theme.smallFont
+        font: Theme.smallFont
         opacity: 0.7
         text: Theme.tr("Настройки сохранятся и включатся, когда будет включён режим «%1»").arg(Theme.profileName(tabs.profile))
     }
