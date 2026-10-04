@@ -3,7 +3,8 @@
 Слушает демон на системной шине и показывает карточки KDE:
   • смена режима (Fn+F5, автоматика сеть/батарея, приложение) — карточка режима;
   • яркость подсветки клавишами — карточка подсветки;
-  • видеокарта переключилась или не смогла — уведомление.
+  • видеокарта переключилась или не смогла — уведомление;
+  • зарядку отключили, а на NVIDIA работают программы — уведомление «закрыть или подождать».
 KDE сам рисует карточку режима только когда меняет его сам, поэтому её показываем мы.
 Потом этот код войдёт в приложение в трее; пока это отдельная служба.
 """
@@ -30,10 +31,14 @@ class Agent:
         self.session = session
         self.profile = None
         self.notification_id = 0
+        self.ask_id = 0             # открытое уведомление «закрыть программы или подождать»
         for signal, handler in (("StateChanged", self.on_state), ("KeyboardBrightnessChanged", self.on_brightness),
-                                ("GpuSwitchFinished", self.on_gpu)):
+                                ("GpuSwitchFinished", self.on_gpu), ("GpuAutoAsk", self.on_auto_ask)):
             system.signal_subscribe(BUS_NAME, INTERFACE, signal, OBJECT_PATH, None,
                                     Gio.DBusSignalFlags.NONE, handler)
+        for signal, handler in (("ActionInvoked", self.on_action), ("NotificationClosed", self.on_closed)):
+            session.signal_subscribe("org.freedesktop.Notifications", "org.freedesktop.Notifications", signal,
+                                     "/org/freedesktop/Notifications", None, Gio.DBusSignalFlags.NONE, handler)
         # текущий режим — чтобы не показать карточку при запуске
         try:
             r = system.call_sync(BUS_NAME, OBJECT_PATH, "org.freedesktop.DBus.Properties", "Get",
@@ -69,6 +74,9 @@ class Agent:
             if self.profile is not None:
                 self.osd("powerProfileChanged", "s", PPD_NAMES.get(profile, "balanced"))
             self.profile = profile
+        # вопрос больше не актуален (подключили зарядку, программы закрыли, выбрали режим вручную)
+        if self.ask_id and not (state.get("gpu") or {}).get("auto_waiting"):
+            self.close_ask()
 
     def on_brightness(self, *args):
         level, top = args[5].unpack()
@@ -80,6 +88,52 @@ class Agent:
             self.notify(_("Видеокарта не переключилась"), error, "dialog-warning")
         else:
             self.notify(_("Видеокарта"), GPU_TEXT.get(state, f"NVIDIA: {state}"))
+
+
+    # ---------- «Авто»: закрыть программы на NVIDIA или подождать ----------
+    def on_auto_ask(self, *args):
+        programs, manual = args[5].unpack()
+        if not programs:
+            return
+        first = programs[0]
+        more = len(programs) - 1
+        who = first if not more else _("{0} и ещё {1}").format(first, more)
+        text = (_("Чтобы выключить NVIDIA (Eco), нужно закрыть: {0}. Закрыть и выключить сейчас или подождать, "
+                  "пока вы закроете сами?") if manual else
+                _("Зарядка отключена, а NVIDIA занята: {0}. Закрыть и выключить видеокарту, чтобы батарея "
+                  "прожила дольше, или подождать, пока вы закроете сами?")).format(who)
+        actions = ["close", _("Закрыть и выключить"), "wait", _("Подождать")]
+
+        def done(conn, res):
+            try:
+                self.ask_id = conn.call_finish(res).unpack()[0]
+            except GLib.Error as e:
+                log.warning(_("уведомление: %s"), e.message)
+        self.session.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                          "org.freedesktop.Notifications", "Notify",
+                          GLib.Variant("(susssasa{sv}i)", ("Asus-helper", self.ask_id, "video-display",
+                                                           _("NVIDIA занята"), text, actions,
+                                                           {"desktop-entry": GLib.Variant("s", "asus-helper"),
+                                                            "urgency": GLib.Variant("y", 1)}, 0)),
+                          None, Gio.DBusCallFlags.NONE, -1, None, done)
+
+    def on_action(self, *args):
+        nid, action = args[5].unpack()
+        if nid != self.ask_id or action not in ("close", "wait"):
+            return
+        self.ask_id = 0
+        self.system.call(BUS_NAME, OBJECT_PATH, INTERFACE, "SetGpuAutoAnswer", GLib.Variant("(s)", (action,)),
+                         None, Gio.DBusCallFlags.NONE, -1, None, None)
+
+    def on_closed(self, *args):
+        if args[5].unpack()[0] == self.ask_id:
+            self.ask_id = 0         # закрыли крестиком — значит, подождать (это и так по умолчанию)
+
+    def close_ask(self):
+        nid, self.ask_id = self.ask_id, 0
+        self.session.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                          "org.freedesktop.Notifications", "CloseNotification", GLib.Variant("(u)", (nid,)),
+                          None, Gio.DBusCallFlags.NONE, -1, None, None)
 
 
 def main() -> int:

@@ -12,6 +12,7 @@ QQC2.AbstractButton {
     property string subtitle: ""
     property bool selected: false
     property bool busy: false
+    property bool dimmed: false           // выбрана, но ждёт (например, «Авто» ждёт закрытия программ)
     property bool compact: false          // без иконки, ниже — для яркости, частоты и т. п.
     property color accent: Kirigami.Theme.highlightColor
 
@@ -43,7 +44,7 @@ QQC2.AbstractButton {
             anchors.fill: parent
             anchors.margins: parent.border.width
             radius: parent.radius - parent.border.width
-            opacity: tile.selected ? 1 : 0
+            opacity: tile.selected ? (tile.dimmed ? 0.35 : 1) : 0
             Behavior on opacity { NumberAnimation { duration: Kirigami.Units.longDuration } }
             gradient: Gradient {
                 GradientStop { position: 0; color: Qt.alpha(tile.accent, 0.28) }
@@ -68,7 +69,9 @@ QQC2.AbstractButton {
                 // символьные иконки красим цветом плитки, цветные оставляем как есть
                 isMask: tile.symbolic
                 color: tile.selected ? tile.accent : Kirigami.Theme.textColor
+                opacity: tile.dimmed ? 0.35 : 1
                 visible: !tile.busy
+                Behavior on opacity { NumberAnimation { duration: Kirigami.Units.longDuration } }
                 Behavior on color { ColorAnimation { duration: Kirigami.Units.longDuration } }
             }
             QQC2.BusyIndicator {

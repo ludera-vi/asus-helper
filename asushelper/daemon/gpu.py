@@ -1,9 +1,10 @@
 """Видеокарта NVIDIA: Eco (выключена через BIOS) и Стандарт (гибрид) — без перезагрузки.
 
-Перенос gpu-eco из gpu-switch. Выключение: проверить MUX и программы на NVIDIA → остановить
-nvidia-powerd/persistenced → выгрузить драйвер → убрать карту с шины PCI → dgpu_disable=1.
-Включение: dgpu_disable=0 → пересканировать шину → загрузить драйвер → запустить сервисы.
-Если шаг не удался, всё возвращается как было.
+Жёстко, как G-Helper. Выключение: закрыть программы на NVIDIA и хвосты прошлых попыток → остановить
+nvidia-powerd/persistenced → снять карту с шины PCI (драйвер отпускает её, даже если его модуль занят) →
+dgpu_disable=1 → выгрузить драйвер, если получится. Включение: dgpu_disable=0 → пересканировать шину →
+драйвер (если не подхватил карту сам) → сервисы. Не получилось — всё возвращается как было.
+Каждый шаг, который трогает ядро, ограничен по времени: зависнуть может ядро, но не демон.
 
 «Призрак»: если ноутбук включили в Eco, BIOS всё равно показывает обесточенную карту на шине,
 и ядро ждёт её по 65 с при каждом выходе из сна. fixup() убирает её с шины.
@@ -32,11 +33,9 @@ LOCK = "/run/gpu-eco.lock"
 
 
 class GpuError(Exception):
-    """can_force — карту держат обычные программы пользователя, их можно закрыть и выключить."""
-    def __init__(self, text: str, can_force: bool = False, busy: bool = False):
+    """Переключение не удалось; текст — для человека."""
+    def __init__(self, text: str):
         super().__init__(text)
-        self.can_force = can_force
-        self.busy = busy            # карту кто-то занял — позже может освободиться, можно повторить
 
 
 # Рабочий стол и система: их нельзя закрывать никогда — это обрушит сеанс или всю систему.
@@ -205,6 +204,51 @@ def names(busy: list[tuple[int, str]]) -> list[str]:
     return shown or all_
 
 
+def program_name(pid: int, comm: str) -> str:
+    """Имя программы для человека: по исполняемому файлу. У многих программ имя главного потока своё
+    («GUI Thread», «MainThread»), а по файлу видно, что это steam, brave или davinci."""
+    try:
+        exe = os.path.basename(os.readlink(f"/proc/{pid}/exe")).removesuffix(" (deleted)")
+    except OSError:
+        return comm
+    return exe or comm
+
+
+def vram_by_pid() -> dict[int, int]:
+    """Сколько видеопамяти NVIDIA занимает каждый процесс, МиБ (nvidia-smi; карта и так работает)."""
+    import xml.etree.ElementTree as ET
+    if sysfs.ROOT:
+        return {}             # тесты: настоящую карту не трогаем
+    try:
+        out = subprocess.run(["nvidia-smi", "-q", "-x"], capture_output=True, text=True, timeout=5).stdout
+        root = ET.fromstring(out)
+    except (OSError, subprocess.TimeoutExpired, ET.ParseError):
+        return {}
+    usage = {}
+    for p in root.iter("process_info"):
+        try:
+            pid = int(p.findtext("pid", ""))
+            mib = int((p.findtext("used_memory") or "0").split()[0])
+        except ValueError:
+            continue
+        usage[pid] = usage.get(pid, 0) + mib
+    return usage
+
+
+def user_programs(gpu: str | None = None) -> list[str]:
+    """Программы пользователя на NVIDIA (без рабочего стола и системы) — первой та, что занимает больше
+    всего видеопамяти. Их нужно закрыть, чтобы выключить карту."""
+    busy = [(p, c) for p, c in holders(gpu) if not is_protected(p, c)]
+    if not busy:
+        return []
+    vram = vram_by_pid()
+    out: list[str] = []
+    for pid, comm in sorted(busy, key=lambda h: -vram.get(h[0], 0)):
+        if (name := program_name(pid, comm)) not in out:
+            out.append(name)
+    return out
+
+
 def holders(gpu: str | None = None) -> list[tuple[int, str]]:
     """Процессы, у которых открыта NVIDIA: [(pid, имя)]. Карту не будит — смотрит только /proc."""
     gpu = gpu or find_gpu()
@@ -308,10 +352,10 @@ def _run(*cmd) -> bool:
     return r.returncode == 0
 
 
-# Выгрузка драйвера может навсегда застрять в ядре (процесс в состоянии D: драйвер ждёт событий ACPI,
-# которые ядро так и не обработало). Убить такой процесс нельзя, ждать его — тоже: демон вечно
-# «переключался» бы. Ждём разумное время, дальше — ошибка, а новые переключения до перезагрузки не начинаем.
-UNLOAD_TIMEOUT = 60
+# ---------- шаги, которые трогают ядро: каждый в своём процессе и с ограничением времени ----------
+# Драйвер NVIDIA или BIOS могут зависнуть внутри ядра (процесс в состоянии D). Убить такой процесс нельзя
+# ничем, поэтому поток демона сам в ядро не ходит: шаг выполняет дочерний процесс, демон ждёт его не дольше
+# срока. Завис — до перезагрузки видеокарту не переключаем и говорим об этом прямо.
 stuck: subprocess.Popen | None = None
 
 
@@ -319,27 +363,40 @@ def is_stuck() -> bool:
     return stuck is not None and stuck.poll() is None
 
 
-def _unload_driver() -> bool:
+def stuck_message() -> str:
+    return _("драйвер NVIDIA завис в ядре (ошибка драйвера). Нужна перезагрузка; до неё видеокарту "
+             "не переключаю")
+
+
+def _kernel(cmd: list[str], timeout: float) -> bool:
+    """Выполнить cmd не дольше timeout. Завис — запомнить и GpuError; True — успешно."""
     global stuck
-    cmd = ["modprobe", "-r", *MODULES_UNLOAD]
     p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
-        p.wait(UNLOAD_TIMEOUT)
+        p.wait(timeout)
     except subprocess.TimeoutExpired:
         stuck = p
-        log.error(_("выгрузка драйвера NVIDIA зависла в ядре (%s с)"), UNLOAD_TIMEOUT)
-        raise GpuError(_("драйвер NVIDIA завис при выгрузке (ошибка в ядре или драйвере). Нужна перезагрузка; "
-                         "до неё видеокарту не переключаю"))
+        log.error(_("%s завис в ядре (%s с)"), " ".join(cmd), timeout)
+        raise GpuError(stuck_message())
     if p.returncode != 0:
         log.warning("%s: %s", " ".join(cmd), p.stderr.read().strip())
     return p.returncode == 0
 
 
-# После включения или выключения BIOS ещё несколько секунд обрабатывает событие (подключает карту к шине
-# или снимает с неё питание через ACPI), а драйвер запускает прошивку видеокарты. Новое переключение в этот
-# момент может намертво застрять в ядре (так и было: выключение сразу после включения). Поэтому между
-# любыми двумя переключениями — пауза.
-SETTLE_S = 20
+def _write(path: str, value, timeout: float = 20) -> bool:
+    """Запись в sysfs (remove, rescan, dgpu_disable) — тоже может зависнуть в ядре."""
+    if sysfs.ROOT:                       # тесты: поддельный sysfs
+        return sysfs.write(path, value)
+    return _kernel(["sh", "-c", 'echo "$1" > "$2"', "sh", str(value), path], timeout)
+
+
+# BIOS отвечает на dgpu_disable за 6–8 с; выгрузка и загрузка драйвера — несколько секунд
+BIOS_TIMEOUT = 30
+UNLOAD_TIMEOUT = 15
+LOAD_TIMEOUT = 60
+# Между двумя переключениями — короткая пауза: BIOS ещё обрабатывает прошлое событие (подключает карту
+# к шине или снимает питание), и новое переключение в этот момент может застрять в ядре.
+SETTLE_S = 5
 _changed_at: float | None = None      # только настоящие переключения; при старте демона паузы нет
 
 
@@ -349,7 +406,6 @@ def _now() -> float:
 
 def _settle() -> None:
     if _changed_at is not None and (wait := _changed_at + SETTLE_S - _now()) > 0:
-        log.info(_("видеокарта только что переключалась — жду %d с"), round(wait))
         time.sleep(wait)
 
 
@@ -366,17 +422,31 @@ def _start_services() -> None:
             _run("systemctl", "start", s)
 
 
+def _stop_services() -> None:
+    subprocess.run(["systemctl", "stop", *SERVICES], capture_output=True)
+
+
 def _load_driver() -> bool:
-    _mark()
-    return _run("modprobe", "-a", *MODULES_LOAD)
+    return _kernel(["modprobe", "-a", *MODULES_LOAD], LOAD_TIMEOUT)
 
 
 def _remove_from_bus(gpu: str) -> None:
-    """Сначала звук/USB-C (.1, .2 …), потом саму видеокарту (.0)."""
+    """Сначала звук/USB-C (.1, .2 …), потом саму видеокарту (.0). Драйвер при этом отпускает карту, даже
+    если его модуль «занят» — выгружать модуль для этого не нужно."""
     base = gpu.rsplit(".", 1)[0]
     for f in sorted(sysfs.find(f"{PCI}/{base}.*"), reverse=True):
         if sysfs.exists(f + "/remove"):
-            sysfs.write(f + "/remove", 1)
+            _write(f + "/remove", 1)
+
+
+def _rescan() -> str | None:
+    """Пересканировать шину, пока карта не появится (до 10 с). PCI-адрес или None."""
+    for _attempt in range(10):
+        if gpu := find_gpu():
+            return gpu
+        _write("/sys/bus/pci/rescan", 1)
+        time.sleep(1)
+    return find_gpu()
 
 
 def fixup() -> bool:
@@ -384,28 +454,68 @@ def fixup() -> bool:
     gpu = find_gpu()
     if not bios_off() or gpu is None:
         return False
-    if sysfs.exists(f"{PCI}/{gpu}/driver"):
-        log.info(_("NVIDIA выключена в BIOS, но драйвер держит карту — не трогаю"))
-        return False
     log.info(_("убираю выключенную NVIDIA с шины PCI (иначе выход из сна ждёт её 65 с)"))
     _remove_from_bus(gpu)
     return True
 
 
-def _unload_and_remove(gpu: str) -> None:
-    log.info(_("останавливаю сервисы NVIDIA"))
-    subprocess.run(["systemctl", "stop", *SERVICES], capture_output=True)
-    log.info(_("выгружаю драйвер NVIDIA"))
-    if not _unload_driver():
-        _load_driver()
-        _start_services()
-        raise GpuError(_("драйвер не выгрузился (что-то ещё использует карту) — всё возвращено как было"), busy=True)
-    log.info(_("убираю NVIDIA с шины PCI"))
-    _remove_from_bus(gpu)
+# ---------- уборка до и после переключения ----------
+# Служебные программы NVIDIA, которые остаются висеть от прошлых попыток или опрашивают карту
+LEFTOVERS = ("nvidia-smi", "nvidia-settings")
+
+
+def _leftovers() -> list[int]:
+    """Хвосты: nvidia-smi и nvidia-settings, ожидающие modprobe NVIDIA (не зависшие в ядре — тех не убить)."""
+    out = []
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            with open(f"/proc/{pid}/comm") as f:
+                comm = f.read().strip()
+            if comm == "modprobe":
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    cmd = f.read()
+                if b"nvidia" not in cmd and b"char-major-195" not in cmd:
+                    continue
+            elif comm not in LEFTOVERS:
+                continue
+        except OSError:
+            continue
+        if stuck is None or int(pid) != stuck.pid:
+            out.append(int(pid))
+    return out
+
+
+def _kill(pids: list[int], sig) -> None:
+    for pid in pids:
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            pass
+
+
+def _close(gpu: str | None) -> None:
+    """Закрыть всё, что держит NVIDIA, кроме рабочего стола и системы: TERM, 2 с, оставшимся — KILL."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        busy = [(p, c) for p, c in holders(gpu) if not is_protected(p, c)] if gpu else []
+        pids = [p for p, _c in busy] + ([] if sysfs.ROOT else _leftovers())
+        if not pids:
+            return
+        if sig == signal.SIGTERM and busy:
+            log.info(_("закрываю программы на NVIDIA: %s"), ", ".join(names(busy)))
+        _kill(pids, sig)
+        end = time.monotonic() + 2.0
+        while time.monotonic() < end and any(os.path.exists(f"/proc/{p}") for p in pids):
+            time.sleep(0.2)
+
+
+def _cleanup(gpu: str | None) -> None:
+    """Перед переключением и после ошибки: никаких хвостов от прошлых попыток."""
+    _close(gpu)
+    _stop_services()
 
 
 # Устройства NVIDIA на время выключения закрыты для всех, кроме root: иначе закрытая программа (или
-# перезапущенный процесс браузера) сразу открыла бы карту снова и драйвер не выгрузился бы.
+# перезапущенный процесс браузера) сразу открыла бы карту снова.
 def _nvidia_nodes(gpu: str) -> list[str]:
     nodes = [f"/dev/{n}" for n in os.listdir("/dev") if n.startswith("nvidia") and n != "nvidia-caps"]
     drm = sysfs.path(f"{PCI}/{gpu}/drm")
@@ -430,121 +540,92 @@ def _block_nodes(gpu: str) -> dict[str, int]:
 def _unblock_nodes(saved: dict[str, int]) -> None:
     for n, mode in saved.items():
         try:
-            os.chmod(n, mode)        # после выгрузки драйвера части узлов уже нет — это нормально
+            os.chmod(n, mode)        # после снятия карты с шины части узлов уже нет — это нормально
         except OSError:
             pass
 
 
-def _close(busy: list[tuple[int, str]], gpu: str) -> bool:
-    """SIGTERM, до 4 с подождать, оставшимся — SIGKILL. True — карту больше никто не держит."""
-    for sig, wait in ((signal.SIGTERM, 4.0), (signal.SIGKILL, 2.0)):
-        for pid, _comm in busy:
-            try:
-                os.kill(pid, sig)
-            except OSError:
-                pass
-        end = time.monotonic() + wait
-        while time.monotonic() < end:
-            time.sleep(0.25)
-            busy = [(p, c) for p, c in holders(gpu) if not is_protected(p, c)]
-            if not busy:
-                return True
-    return False
-
-
+# ---------- переключение ----------
 def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
-    """Eco: карта выключается, кто бы её ни держал (кроме рабочего стола и системы — их закрыть нельзя).
-    GpuError с понятным текстом, если нельзя; при ошибке всё возвращается как было. force оставлен для
-    совместимости вызовов — программы на NVIDIA закрываются всегда."""
+    """Eco, жёстко (как G-Helper): закрыть программы на NVIDIA, снять карту с шины, выключить в BIOS.
+    Драйвер выгружается, если получится; не получится — не мешает. При ошибке всё возвращается как было.
+    force оставлен для совместимости вызовов."""
     gpu = find_gpu()
-    if gpu and not ignore_displays and (ext := external_displays(gpu)):
-        raise GpuError(_("К NVIDIA подключён монитор ({0}) — после выключения он погаснет").format(', '.join(ext)))
-    if bios_off() and (gpu is None or not sysfs.exists(f"{PCI}/{gpu}/driver")):
-        fixup()
+    if bios_off() and gpu is None:
         return
     if not mux_hybrid():
         raise GpuError(_("MUX в режиме «только NVIDIA» — сначала переключите MUX в гибрид и перезагрузитесь"))
+    if gpu and not ignore_displays and (ext := external_displays(gpu)):
+        raise GpuError(_("К NVIDIA подключён монитор ({0}) — после выключения он погаснет").format(', '.join(ext)))
     if gpu and (drv := driver(gpu)) not in (None, "nvidia"):
-        # выгружать умеем только драйвер NVIDIA; снять карту с шины под другим драйвером — риск зависания
+        # с чужим драйвером снимать карту с шины опасно — может зависнуть ядро
         raise GpuError(_("видеокарта работает на драйвере {0}, а Eco умеет выключать её только с драйвером NVIDIA "
                          "(пакет nvidia-open или nvidia)").format(drv))
-
+    _settle()
     if gpu:
-        _settle()                   # до проверки: за время паузы карту мог занять, например, экран входа
-        busy = holders(gpu)
-        if busy:
-            listed = ", ".join(names(busy))
-            protected = names([(p, c) for p, c in busy if is_protected(p, c)])
-            if protected:
-                # закрывать нельзя — это рабочий стол или система
-                raise GpuError(_("NVIDIA держит рабочий стол ({0}). Он отпустит её после выхода из сеанса и входа снова — один раз после установки Asus-helper").format(', '.join(protected)), busy=True)
-            # Обычные программы закрываем всегда (Eco должен выключать карту, кто бы её ни держал). Сначала
-            # закрываем доступ к устройствам NVIDIA: служебный процесс отрисовки браузера или Electron
-            # перезапустится сам и откроет уже только Intel — вкладки и окна не пропадут.
-            log.info(_("закрываю программы на NVIDIA: %s"), listed)
-            blocked = _block_nodes(gpu)
-            if not _close(busy, gpu):
-                _unblock_nodes(blocked)
-                raise GpuError(_("программы не закрылись: ") + ", ".join(names(holders(gpu))), busy=True)
-        else:
-            blocked = _block_nodes(gpu)
+        _cleanup(gpu)
+        blocked = _block_nodes(gpu)
         try:
-            _unload_and_remove(gpu)
+            log.info(_("убираю NVIDIA с шины PCI"))
+            _remove_from_bus(gpu)
         finally:
             _unblock_nodes(blocked)
-
-    _settle()
     log.info(_("отключаю NVIDIA в BIOS"))
     _mark()
-    if not sysfs.write(_attr("dgpu_disable"), 1):
-        sysfs.write("/sys/bus/pci/rescan", 1)
-        _load_driver()
-        _start_services()
+    if not _write(_attr("dgpu_disable"), 1, BIOS_TIMEOUT) or find_gpu():
+        _restore()
         raise GpuError(_("BIOS отказал в отключении — всё возвращено как было"))
-    time.sleep(1)
-    if find_gpu():
-        raise GpuError(_("карта всё ещё видна после отключения"))
     log.info(_("NVIDIA выключена (Eco)"))
+    # драйвер без карты не нужен; занят (буферы рабочего стола) — останется загруженным, это безвредно.
+    # Завис — карта всё равно выключена; зависание запомнено, включать её до перезагрузки не будем.
+    try:
+        if not _kernel(["modprobe", "-r", *MODULES_UNLOAD], UNLOAD_TIMEOUT):
+            log.info(_("драйвер NVIDIA остался загруженным (его модуль занят) — карта всё равно выключена"))
+    except GpuError:
+        pass
+
+
+def _restore() -> None:
+    """Откат неудачного Eco: карта снова на шине и с драйвером."""
+    log.info(_("возвращаю NVIDIA"))
+    _write(_attr("dgpu_disable"), 0, BIOS_TIMEOUT)
+    if _rescan() and driver() is None:
+        _load_driver()
+    _start_services()
 
 
 def turn_on() -> None:
-    if not bios_off() and find_gpu():
+    if not bios_off() and find_gpu() and driver():
         return
-    fixup()   # «призрак» помешал бы найти карту заново
     _settle()
+    _cleanup(None)
+    fixup()   # «призрак» помешал бы найти карту заново
     log.info(_("включаю NVIDIA в BIOS"))
     _mark()
-    # BIOS отвечает на команду через 6–8 с (карту на шину он подключает раньше). Включённой считаем,
-    # только когда BIOS ответил: до этого любое обращение к нему ждало бы своей очереди.
-    if not sysfs.write(_attr("dgpu_disable"), 0):
+    if not _write(_attr("dgpu_disable"), 0, BIOS_TIMEOUT):
         raise GpuError(_("BIOS отказал во включении"))
-    for _attempt in range(10):
-        if find_gpu():
-            break
-        time.sleep(1)
-        sysfs.write("/sys/bus/pci/rescan", 1)
-    else:
+    if not _rescan():
         raise GpuError(_("карта не появилась. Перезагрузите ноутбук — BIOS уже включил её"))
-    log.info(_("загружаю драйвер NVIDIA"))
-    if not _load_driver():
-        raise GpuError(_("драйвер не загрузился (журнал: journalctl -b -k | grep -i nvidia)"))
+    # модуль, оставшийся загруженным, сам подхватит карту; если его нет — загрузить
+    if driver() is None:
+        log.info(_("загружаю драйвер NVIDIA"))
+        if not _load_driver():
+            raise GpuError(_("драйвер не загрузился (журнал: journalctl -b -k | grep -i nvidia)"))
     _start_services()
     log.info(_("NVIDIA включена (Стандарт)"))
 
 
 class Switcher:
-    """Переключение в отдельном потоке: главный цикл демона не ждёт modprobe и шину PCI."""
+    """Переключение в отдельном потоке: главный цикл демона не ждёт шину PCI и BIOS."""
 
     def __init__(self, on_done):
         self.on_done = on_done      # on_done(error: str | None) — вызывается в главном потоке
         self.busy = False
-        self.retryable = False      # последняя ошибка — «карту заняли», можно попробовать позже
         self.target: str | None = None
         self._error: str | None = None
         self._error_at = 0.0
-        self.can_force = False
 
-    # ошибка показывается минуту: потом она уже не про текущее состояние (вышли из сеанса, закрыли игру…)
+    # ошибка показывается минуту: потом она уже не про текущее состояние
     ERROR_TTL = 60
 
     @property
@@ -557,19 +638,17 @@ class Switcher:
         self._error_at = time.monotonic()
 
     def start(self, want_off: bool, force: bool = False, ignore_displays: bool = False) -> bool:
-        if self.busy:
+        if self.busy or is_stuck():
             return False
         self.busy = True
         self.target = "eco" if want_off else "standard"
         self.last_error = None
-        self.can_force = False
-        threading.Thread(target=self._work, args=(want_off, force, ignore_displays), daemon=True).start()
+        threading.Thread(target=self._work, args=(want_off, ignore_displays), daemon=True).start()
         return True
 
-    def _work(self, want_off: bool, force: bool, ignore_displays: bool) -> None:
+    def _work(self, want_off: bool, ignore_displays: bool) -> None:
         from gi.repository import GLib
         err = None
-        can_force = retryable = False
         try:
             with open(sysfs.path(LOCK) if sysfs.ROOT else LOCK, "w") as lock:
                 try:
@@ -578,13 +657,12 @@ class Switcher:
                     raise GpuError(_("видеокарту уже переключает другая программа (gpu-eco?)"))
                 guard = None if sysfs.ROOT else HotkeyGuard.acquire()
                 try:
-                    (turn_off(force, ignore_displays) if want_off else turn_on())
+                    (turn_off(ignore_displays=ignore_displays) if want_off else turn_on())
                 finally:
                     if guard:
                         guard.release_later()
         except GpuError as e:
             err = str(e)
-            can_force, retryable = e.can_force, e.busy
             log.warning(_("видеокарта: %s"), err)
         except Exception as e:
             err = _("внутренняя ошибка: {0}").format(e)
@@ -593,8 +671,6 @@ class Switcher:
         def done():
             self.busy = False
             self.last_error = err
-            self.can_force = can_force
-            self.retryable = retryable
             self.on_done(err)
             return GLib.SOURCE_REMOVE
         GLib.idle_add(done)

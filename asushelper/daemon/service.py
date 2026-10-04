@@ -62,6 +62,9 @@ XML = f"""
       <arg type="s" direction="in" name="mode"/><arg type="u" direction="in" name="flags"/>
     </method>
     <method name="SetGpuAutoEco"><arg type="b" direction="in" name="enabled"/></method>
+    <!-- ответ на вопрос Eco (сигнал GpuAutoAsk): close — закрыть программы и выключить, wait — подождать,
+         cancel — не выключать -->
+    <method name="SetGpuAutoAnswer"><arg type="s" direction="in" name="answer"/></method>
     <!-- переключатели BIOS: panel_overdrive, boot_sound -->
     <method name="SetToggle">
       <arg type="s" direction="in" name="attr"/><arg type="b" direction="in" name="enabled"/>
@@ -98,6 +101,9 @@ XML = f"""
     <signal name="KeyboardBrightnessChanged"><arg type="i" name="level"/><arg type="i" name="max"/></signal>
     <!-- переключение видеокарты закончилось; error пустой — успешно -->
     <signal name="GpuSwitchFinished"><arg type="s" name="state"/><arg type="s" name="error"/></signal>
+    <!-- Eco (вручную или «Авто» без зарядки), а на NVIDIA работают программы (первая — самая «тяжёлая»):
+         закрыть или подождать? manual — Eco выбрал человек -->
+    <signal name="GpuAutoAsk"><arg type="as" name="programs"/><arg type="b" name="manual"/></signal>
     <property name="Profile" type="s" access="read"/>
     <property name="Version" type="s" access="read"/>
   </interface>
@@ -121,9 +127,11 @@ class Service:
         self.gpu = gpu.Switcher(self._gpu_done)
         self._gpu_cache = {}
         self._state_cache = {}
-        self.auto_waiting: list[str] | None = None   # «Авто» ждёт, пока эти программы отпустят NVIDIA
-        self._auto_timer = 0
-        self._auto_retries = 0      # «Авто» не смогло выключить занятую карту — сколько раз уже повторяло
+        self._auto_settle = 0       # «Авто» ждёт, пока после смены питания успокоятся события ACPI
+        self.auto_waiting: list[str] | None = None   # Eco ждёт, пока закроют эти программы на NVIDIA
+        self.waiting_manual = False  # ждёт ручной Eco (иначе — «Авто»)
+        self._wait_ignore_displays = False
+        self._auto_watch = 0
         self.idle = None
         self._gpu_state()
         self.history = history.History(paused=lambda: self.gpu.busy)
@@ -183,7 +191,7 @@ class Service:
         # /sys/bus/pci ждёт до 10 с, и демон перестал бы отвечать. Отдаём последнее известное + цель.
         if self.gpu.busy:
             return dict(self._gpu_cache, switching=True, target=self.gpu.target, auto_waiting=None,
-                        auto_eco=self.config.data["gpu"]["auto_eco"], error=None, can_force=False)
+                        auto_eco=self.config.data["gpu"]["auto_eco"], error=None)
         supported = gpu.supported()
         cards = gpu.display_gpus()
         g = self.config.data["gpu"]
@@ -199,14 +207,14 @@ class Service:
             "auto_eco": self.config.data["gpu"]["auto_eco"],
             "switching": False,
             "target": None,
-            "error": STUCK_MSG() if gpu.is_stuck() else self.gpu.last_error,
+            "error": gpu.stuck_message() if gpu.is_stuck() else self.gpu.last_error,
             "stuck": gpu.is_stuck(),
-            "can_force": self.gpu.can_force and self.gpu.last_error is not None,
             "external": gpu.external_displays() if supported and not gpu.bios_off() else [],
             "dgpu_name": dgpu.get("vendor") or "NVIDIA",
             "dgpu_model": dgpu.get("model"),
             "igpu_model": igpu.get("model"),
             "auto_waiting": self.auto_waiting,
+            "waiting_manual": self.waiting_manual,
             "igpu_name": igpu.get("vendor") or gpu.igpu_name(),
         }
         return self._gpu_cache
@@ -215,10 +223,7 @@ class Service:
         """state() и то, что дорого считать для каждого сигнала (кто держит NVIDIA)."""
         s = self.state()
         if s["gpu"]["state"] not in (None, "off") and not s["gpu"]["switching"]:
-            h = gpu.holders()
-            s["gpu"]["holders"] = gpu.names(h)
-            # рабочий стол запущен до установки и работает на NVIDIA — поможет только новый вход
-            s["gpu"]["desktop_holds"] = any(gpu.is_desktop(c) for _, c in h)
+            s["gpu"]["holders"] = gpu.names([(p, gpu.program_name(p, c)) for p, c in gpu.holders()])
         return s
 
     # ---------- события ----------
@@ -233,7 +238,7 @@ class Service:
         # «Заряд батареи» на Slash — обновлять раз в минуту
         GLib.timeout_add_seconds(60, self._slash_battery_tick)
         self.modes.startup()
-        self._auto_eco()
+        self._auto_eco_later()      # при загрузке BIOS тоже рассылает события питания
         self._watch_brightness()
 
     def before_sleep(self) -> None:
@@ -247,21 +252,19 @@ class Service:
             log.info(_("сон: вентиляторы — по кривой BIOS"))
 
     def resumed(self) -> None:
-        self._auto_retries = 0
         self.modes.ac = hw.on_ac()
         if self.idle:
             self.idle.reset()
         self.apply_keyboard()
         self.apply_slash(wake=True)
         self.modes.reapply(_("выход из сна"))
-        self._auto_eco()
+        self._auto_eco_later()
 
     def power_source_changed(self, ac: bool) -> None:
         if ac == self.modes.ac:
             return
-        self._auto_retries = 0
         self.modes.power_source_changed(ac)
-        self._auto_eco()
+        self._auto_eco_later()
 
     def apply_keyboard(self) -> None:
         k = self.config.data["keyboard"]
@@ -280,70 +283,98 @@ class Service:
             self.apply_slash()
         return GLib.SOURCE_CONTINUE
 
-    AUTO_RECHECK_S = 10
-    AUTO_RETRIES = 3
+    # После подключения зарядки, выхода из сна и загрузки BIOS несколько секунд рассылает события ACPI о
+    # питании, и драйвер NVIDIA их обрабатывает. Переключать в этот момент — риск зависания в ядре, поэтому
+    # «Авто» ждёт. Попытка одна: не получилось — ошибка в окне, следующая — при следующей смене питания.
+    AUTO_SETTLE_S = 10
 
-    def _auto_eco(self) -> bool:
-        """«Авто»: от сети NVIDIA включена, без сети — Eco. Если NVIDIA чем-то занята (игра, DaVinci),
-        не выключаем — ждём, пока освободится, и проверяем раз в 10 с. Возвращает, нужна ли проверка ещё."""
-        waiting_before = self.auto_waiting
-        self.auto_waiting = None
+    def _auto_eco_later(self) -> None:
+        if self._auto_settle:
+            GLib.source_remove(self._auto_settle)
+
+        def run():
+            self._auto_settle = 0
+            self._auto_eco()
+            return GLib.SOURCE_REMOVE
+        self._auto_settle = GLib.timeout_add_seconds(self.AUTO_SETTLE_S, run)
+
+    AUTO_WATCH_S = 3
+
+    def _auto_eco(self) -> None:
+        """«Авто»: от сети NVIDIA включена, без сети — Eco. Если на NVIDIA работают программы, сначала
+        спрашиваем (уведомление: закрыть или подождать) и ждём, пока их закроют."""
+        if self.waiting_manual:
+            return                          # человек сам выбрал Eco и ждёт закрытия программ — не мешаем
         if not (self.config.data["gpu"]["auto_eco"] and gpu.supported()) or self.gpu.busy or gpu.is_stuck():
-            return self._auto_changed(waiting_before)
-        want_off = not self.modes.ac
-        if not want_off:
+            return self._stop_waiting()
+        if self.modes.ac:
+            self._stop_waiting()
             if gpu.bios_off():
                 log.info(_("«Авто»: сеть → включаю NVIDIA"))
                 self.gpu.start(False)
                 self._changed()
-            return self._auto_changed(waiting_before)
+            return
         if gpu.bios_off():
-            return self._auto_changed(waiting_before)
+            return self._stop_waiting()
         if gpu.external_displays():
             log.info(_("«Авто»: к NVIDIA подключён монитор — не выключаю"))
-            return self._auto_changed(waiting_before)
-        # обычные программы на NVIDIA Eco закроет сам; ждать стоит только рабочий стол или экран входа
-        # (например, сразу после загрузки) — их закрыть нельзя, но они скоро отпустят карту
-        busy = gpu.names([(p, c) for p, c in gpu.holders() if gpu.is_protected(p, c)])
-        if busy:
-            if busy != waiting_before:
-                log.info(_("«Авто»: батарея, но NVIDIA занята (%s) — жду"), ", ".join(busy))
-            self.auto_waiting = busy
-            if not self._auto_timer:
-                self._auto_timer = GLib.timeout_add_seconds(self.AUTO_RECHECK_S, self._auto_recheck)
-            return self._auto_changed(waiting_before)
-        log.info(_("«Авто»: батарея → Eco"))
-        self.gpu.start(True)
+            return self._stop_waiting()
+        self._eco_when_free(manual=False)
+
+    def _eco_when_free(self, manual: bool) -> None:
+        """Eco, но программы на NVIDIA без спроса не закрываем: есть такие — спросить и ждать, пока закроют."""
+        if programs := gpu.user_programs():
+            return self._wait_for(programs, manual)
+        self._stop_waiting(manual=True)
+        log.info(_("Eco: NVIDIA свободна — выключаю") if manual else _("«Авто»: батарея → Eco"))
+        self.gpu.start(True, ignore_displays=manual and self._wait_ignore_displays)
         self._changed()
-        return False
 
-    def _auto_changed(self, before) -> bool:
-        if self.auto_waiting != before:
+    def _wait_for(self, programs: list[str], manual: bool) -> None:
+        """Программы на NVIDIA работают — спросить один раз и проверять, не закрыли ли их."""
+        asked = self.auto_waiting is not None
+        if programs != self.auto_waiting or manual != self.waiting_manual:
+            self.auto_waiting = programs
+            self.waiting_manual = manual
             self._changed()
-        return self.auto_waiting is not None
+        if not asked:
+            log.info(_("Eco: на NVIDIA работают %s — спрашиваю, закрыть или подождать"), ", ".join(programs))
+            self.bus.emit_signal(None, OBJECT_PATH, INTERFACE, "GpuAutoAsk",
+                                 GLib.Variant("(asb)", (programs, manual)))
+        if not self._auto_watch:
+            self._auto_watch = GLib.timeout_add_seconds(self.AUTO_WATCH_S, self._auto_watch_tick)
 
-    def _auto_recheck(self) -> bool:
-        if self._auto_eco():
-            return GLib.SOURCE_CONTINUE
-        self._auto_timer = 0
-        self._auto_retries = 0      # «Авто» не смогло выключить занятую карту — сколько раз уже повторяло
+    def _auto_watch_tick(self) -> bool:
+        self._auto_watch = 0
+        if not self.waiting_manual:
+            self._auto_eco()                # закрыли — Eco; нет — снова поставит проверку
+        elif self.gpu.busy or gpu.is_stuck() or gpu.bios_off():
+            self._stop_waiting(manual=True)
+        else:
+            self._eco_when_free(manual=True)
         return GLib.SOURCE_REMOVE
+
+    def _stop_waiting(self, manual: bool = False) -> None:
+        """Перестать ждать. Ожидание, которое начал сам человек (ручной Eco), снимает только он сам
+        (Стандарт, «Авто», «Отмена») — не смена питания."""
+        if self.waiting_manual and not manual:
+            return
+        if self._auto_watch:
+            GLib.source_remove(self._auto_watch)
+            self._auto_watch = 0
+        if self.auto_waiting is not None:
+            self.auto_waiting = None
+            self.waiting_manual = False
+            self._changed()
 
     def _gpu_done(self, error) -> None:
         self.modes._nvidia_powerd(self.modes.ac)   # после включения карты сервис мог запуститься на батарее
         self.bus.emit_signal(None, OBJECT_PATH, INTERFACE, "GpuSwitchFinished",
                              GLib.Variant("(ss)", (gpu.state(), error or "")))
         self._changed()
-        if not error and not self.gpu.busy:
-            self._auto_retries = 0
+        if not error:
             # питание могло смениться, пока карта переключалась, — «Авто» тогда событие пропустило
             self._auto_eco()
-        elif (error and self.gpu.retryable and self.config.data["gpu"]["auto_eco"]
-              and self._auto_retries < self.AUTO_RETRIES and not self._auto_timer):
-            # карту заняли (например, экран входа при загрузке) — «Авто» попробует снова, когда освободится
-            self._auto_retries += 1
-            log.info(_("«Авто»: карта занята — попробую снова через %d с"), self.AUTO_RECHECK_S)
-            self._auto_timer = GLib.timeout_add_seconds(self.AUTO_RECHECK_S, self._auto_recheck)
 
     def _watch_brightness(self) -> None:
         import os
@@ -523,17 +554,42 @@ class Service:
         if self.gpu.busy:
             raise Failed(_("видеокарта уже переключается"))
         if gpu.is_stuck():
-            raise Failed(STUCK_MSG())
+            raise Failed(gpu.stuck_message())
         if mode == "eco" and not gpu.mux_hybrid():
             raise Failed(_("MUX в режиме «только NVIDIA» — выключать её нельзя"))
         if self.config.data["gpu"]["auto_eco"]:
             # ручной выбор отменяет «Оптимальный», иначе при смене питания карта переключится сама
             self.config.data["gpu"]["auto_eco"] = False
             self.config.save()
+        self._stop_waiting(manual=True)      # новый выбор отменяет прежнее ожидание
+        self._wait_ignore_displays = ignore_displays
+        if mode == "eco" and not force and not gpu.bios_off():
+            self._eco_when_free(manual=True)   # программы на NVIDIA без спроса не закрываем
+            return
         self.gpu.start(mode == "eco", force, ignore_displays)
         self._changed()
 
+    def do_SetGpuAutoAnswer(self, answer):
+        """Ответ на вопрос (уведомление или окно): close — закрыть программы и выключить, wait — подождать,
+        cancel — не выключать (только для ручного Eco; «Авто» просто ждёт дальше)."""
+        if answer not in ("close", "wait", "cancel"):
+            raise Failed(_("ответ: close, wait или cancel"))
+        if answer == "wait" or self.auto_waiting is None:
+            return
+        if answer == "cancel" and not self.waiting_manual:
+            return                          # «Авто» не отменяется: дождётся, пока программы закроют, и выключит
+        ignore_displays = self.waiting_manual and self._wait_ignore_displays
+        self._stop_waiting(manual=True)
+        if answer == "cancel":
+            log.info(_("Eco отменён — NVIDIA остаётся включённой"))
+            return
+        log.info(_("Eco: закрыть программы на NVIDIA и выключить её — так ответили"))
+        if not self.gpu.busy:
+            self.gpu.start(True, ignore_displays=ignore_displays)
+            self._changed()
+
     def do_SetGpuAutoEco(self, enabled):
+        self._stop_waiting(manual=True)
         self.config.data["gpu"]["auto_eco"] = bool(enabled)
         self.config.save()
         self._auto_eco()
@@ -648,11 +704,6 @@ class Service:
             self.modes.reapply(_("изменены настройки режима {0}").format(profile))
         else:
             self._changed()
-
-
-def STUCK_MSG() -> str:
-    return _("драйвер NVIDIA завис при выгрузке (ошибка в ядре или драйвере). Нужна перезагрузка; "
-             "до неё видеокарту не переключаю")
 
 
 def sysfs_path(p: str) -> str:

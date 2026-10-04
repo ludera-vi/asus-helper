@@ -163,7 +163,7 @@ class Tray:
             lines.append(f"NVIDIA: {GPU_NAMES.get(g.get('state'), g.get('state'))}"
                          + (_(" — Авто: от сети вкл., без сети выкл.") if g.get("auto_eco") else ""))
             if g.get("auto_waiting"):
-                lines.append(_("Ждёт, пока NVIDIA отпустят: ") + ", ".join(g["auto_waiting"]))
+                lines.append(_("Ожидание закрытия: ") + ", ".join(g["auto_waiting"]))
         # вентиляторов у ноутбука может быть один, три или ни одного (ядро не показывает обороты)
         rpm = "/".join(str(v) for v in (s.get("fans") or {}).values() if v is not None)
         if s.get("cpu_temp") is not None:

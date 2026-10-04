@@ -380,51 +380,70 @@ class GenericTest(unittest.TestCase):
 
 
 class GpuSafetyTest(unittest.TestCase):
-    """Выключение NVIDIA никогда не закрывает рабочий стол и системные процессы."""
+    """Eco жёсткий, как G-Helper: программы на NVIDIA закрываются, карта снимается с шины и выключается.
+    Рабочий стол и системные процессы не закрываются никогда — и не мешают выключить карту."""
+
+    NV = "/sys/bus/pci/devices/0000:01:00.0"
+    DGPU = "/sys/class/firmware-attributes/asus-armoury/attributes/dgpu_disable/current_value"
+    APP = 2 ** 22 + 5                       # такого PID нет в системе
 
     def setUp(self):
+        import shutil
+        from unittest import mock
         fakesys.build(ROOT)
         from asushelper.daemon import gpu
         self.gpu = gpu
-        self.saved = (gpu.find_gpu, gpu.bios_off, gpu.holders, gpu.os.kill, gpu.is_protected)
-        self.killed = []
-        gpu.find_gpu = lambda: "0000:01:00.0"
-        gpu.bios_off = lambda: False
-        gpu.os.kill = lambda pid, sig: self.killed.append(pid)
+        fakesys._w(ROOT, self.NV + "/vendor", "0x10de")
+        fakesys._w(ROOT, self.NV + "/class", "0x030000")
+        fakesys._w(ROOT, self.DGPU, 0)
+        self.killed, self.held, self.writes = [], [], []
+        self.patches = [
+            mock.patch.object(gpu.os, "kill", side_effect=self._kill),
+            mock.patch.object(gpu, "holders", side_effect=lambda g=None: list(self.held)),
+            mock.patch.object(gpu, "_remove_from_bus", side_effect=lambda g: shutil.rmtree(ROOT + self.NV)),
+            mock.patch.object(gpu, "_kernel", return_value=True),           # modprobe
+            mock.patch.object(gpu, "_stop_services"), mock.patch.object(gpu, "_start_services"),
+            mock.patch.object(gpu.time, "sleep"),
+        ]
+        for p in self.patches:
+            p.start()
+        gpu._changed_at = None
 
     def tearDown(self):
-        g = self.gpu
-        g.find_gpu, g.bios_off, g.holders, g.os.kill, g.is_protected = self.saved
+        for p in self.patches:
+            p.stop()
+        self.gpu._changed_at = None
 
-    def test_desktop_never_killed(self):
-        self.gpu.holders = lambda gpu=None: [(1, "systemd"), (900, "kwin_wayland"), (950, "Xwayland"), (4242, "steam")]
-        with self.assertRaises(self.gpu.GpuError) as e:
-            self.gpu.turn_off(force=True)
-        self.assertFalse(e.exception.can_force)
-        self.assertIn("рабочий стол", str(e.exception))
-        self.assertEqual(self.killed, [])
+    def _kill(self, pid, sig):
+        self.killed.append(pid)
+        self.held = [h for h in self.held if h[0] != pid]
 
-    def test_user_apps_are_closed_always(self):
-        # браузер (служебный процесс отрисовки) держит карту — закрываем без вопросов и выключаем
-        held = [[(4242, "brave")]]
-        self.gpu.holders = lambda gpu=None: held[0]
-        self.gpu.is_protected = lambda pid, comm: False
-        blocked, unloaded = [], []
+    def test_desktop_never_killed_and_eco_still_works(self):
+        self.held = [(1, "systemd"), (900, "kwin_wayland"), (950, "Xwayland"), (self.APP, "steam")]
+        self.gpu.turn_off()
+        self.assertEqual(self.killed, [self.APP])                       # только программа
+        self.assertEqual(fakesys.read(ROOT, self.DGPU), "1")             # а карта всё равно выключена
+
+    def test_busy_driver_module_does_not_block(self):
+        """modprobe -r: «nvidia_drm is in use» — карта уже снята с шины, Eco всё равно выполнен."""
+        self.gpu._kernel.return_value = False
+        self.gpu.turn_off()
+        self.assertEqual(fakesys.read(ROOT, self.DGPU), "1")
+
+    def test_bios_refusal_restores_everything(self):
         from unittest import mock
-        with mock.patch.object(self.gpu, "_block_nodes", side_effect=lambda g: blocked.append(g) or {"/dev/nvidia0": 0o666}), \
-             mock.patch.object(self.gpu, "_unblock_nodes") as unblock, \
-             mock.patch.object(self.gpu, "_unload_and_remove", side_effect=lambda g: unloaded.append(g)), \
-             mock.patch.object(self.gpu.time, "sleep"), \
-             mock.patch.object(self.gpu.sysfs, "write", return_value=True):
-            self.gpu.os.kill = lambda pid, sig: (self.killed.append(pid), held.__setitem__(0, []))
-            try:
-                self.gpu.turn_off(force=False)
-            except self.gpu.GpuError:
-                pass                                        # «карта всё ещё видна» — find_gpu подменён
-        self.assertEqual(self.killed, [4242])
-        self.assertEqual(blocked, ["0000:01:00.0"])         # сначала закрыт доступ к устройствам
-        self.assertEqual(unloaded, ["0000:01:00.0"])
-        unblock.assert_called_with({"/dev/nvidia0": 0o666})  # и всегда возвращён
+        real = self.gpu._write
+        calls = []
+
+        def write(p, v, timeout=20):
+            calls.append((p.rsplit("/", 2)[-2], str(v)))
+            return False if p.endswith("dgpu_disable/current_value") and str(v) == "1" else real(p, v)
+        with mock.patch.object(self.gpu, "_write", side_effect=write):
+            with self.assertRaises(self.gpu.GpuError) as e:
+                self.gpu.turn_off()
+        self.assertIn("возвращено", str(e.exception))
+        self.assertIn(("dgpu_disable", "0"), calls)                     # откат: карта снова включена
+        self.gpu._start_services.assert_called()
 
     def test_root_process_protected(self):
         self.assertTrue(self.gpu.is_protected(1, "anything"))
@@ -501,7 +520,7 @@ class FactoryCurvesTest(unittest.TestCase):
 
 
 class AutoEcoTest(unittest.TestCase):
-    """«Авто»: без сети NVIDIA выключается, но не пока её занимают программы."""
+    """«Авто»: без сети NVIDIA выключается, от сети включается. Попытка одна — без бесконечных повторов."""
 
     def setUp(self):
         fakesys.build(ROOT)
@@ -522,70 +541,158 @@ class AutoEcoTest(unittest.TestCase):
             None, None)
         self.s = svc.Service(bus, cfg)
         self.started = []
-        self.s.gpu.start = lambda want_off, *a: self.started.append(want_off) or True
+        self.s.gpu.start = lambda want_off, *a, **k: self.started.append(want_off) or True
         self.s.modes.ac = False
 
     def tearDown(self):
         self.gpu.holders = self.saved
-        if self.s._auto_timer:
-            GLib.source_remove(self.s._auto_timer)
+        for t in (self.s._auto_settle, self.s._auto_watch):
+            if t:
+                GLib.source_remove(t)
 
-    def test_waits_only_for_desktop_then_turns_off(self):
+    def test_desktop_does_not_block_auto(self):
         self.gpu.holders = lambda gpu=None: [(4242, "kwin_wayland")]   # экран входа сразу после загрузки
-        self.assertTrue(self.s._auto_eco())
-        self.assertEqual(self.s.auto_waiting, ["kwin_wayland"])
-        self.assertEqual(self.started, [])                  # не выключаем
-        self.assertEqual(self.s.state()["gpu"]["auto_waiting"], ["kwin_wayland"])
-        self.gpu.holders = lambda gpu=None: []               # экран входа закрылся
-        self.assertFalse(self.s._auto_eco())
+        self.s._auto_eco()
+        self.assertEqual(self.started, [True])              # Eco: рабочий стол не закрывается, но и не мешает
+
+    def ask_signals(self):
+        return [c for c in self.s.bus.emit_signal.call_args_list if c[0][3] == "GpuAutoAsk"]
+
+    def test_user_apps_ask_and_wait(self):
+        """Зарядку выдернули, а на NVIDIA игра: не закрываем молча — спрашиваем и ждём."""
+        from unittest import mock
+        self.s.bus = mock.MagicMock()
+        self.gpu.holders = lambda gpu=None: [(4242, "GUI Thread"), (4243, "steam")]
+        with mock.patch.object(self.gpu, "vram_by_pid", return_value={4243: 900, 4242: 50}), \
+             mock.patch.object(self.gpu, "program_name", side_effect=lambda p, c: {4242: "brave"}.get(p, c)):
+            self.s._auto_eco()
+            self.s._auto_eco()                              # повторная проверка — второй раз не спрашивает
+        self.assertEqual(self.started, [])
+        self.assertEqual(self.s.auto_waiting, ["steam", "brave"])   # первой — та, что заняла больше памяти
+        self.assertEqual(len(self.ask_signals()), 1)
+        self.assertEqual(self.ask_signals()[0][0][4].unpack(), (["steam", "brave"], False))
+        self.assertEqual(self.s.state()["gpu"]["auto_waiting"], ["steam", "brave"])
+        self.assertTrue(self.s._auto_watch)                  # и проверяет, не закрыли ли
+
+    def test_programs_closed_then_eco(self):
+        from unittest import mock
+        self.s.bus = mock.MagicMock()
+        self.gpu.holders = lambda gpu=None: [(4242, "steam")]
+        self.s._auto_eco()
+        self.gpu.holders = lambda gpu=None: []               # человек закрыл игру
+        self.s._auto_watch_tick()
+        self.assertEqual(self.started, [True])
         self.assertIsNone(self.s.auto_waiting)
-        self.assertEqual(self.started, [True])              # Eco
 
-    def test_user_apps_do_not_block_auto(self):
-        self.gpu.holders = lambda gpu=None: [(4242, "brave")]
-        self.assertFalse(self.s._auto_eco())
-        self.assertEqual(self.started, [True])              # Eco закроет их сам
+    def test_answer_close(self):
+        from unittest import mock
+        self.s.bus = mock.MagicMock()
+        self.gpu.holders = lambda gpu=None: [(4242, "steam")]
+        self.s._auto_eco()
+        self.s.do_SetGpuAutoAnswer("wait")
+        self.assertEqual(self.started, [])                  # «подождать» — ничего не меняется
+        self.s.do_SetGpuAutoAnswer("close")
+        self.assertEqual(self.started, [True])              # «закрыть» — Eco закроет и выключит
+        self.assertIsNone(self.s.auto_waiting)
 
-    def test_charger_cancels_waiting(self):
-        self.gpu.holders = lambda gpu=None: [(4242, "Xwayland")]
+    def test_manual_eco_asks_instead_of_closing(self):
+        """Нажал Eco, а открыт DaVinci Resolve — не закрываем молча, спрашиваем и ждём."""
+        from unittest import mock
+        self.s.bus = mock.MagicMock()
+        self.gpu.holders = lambda gpu=None: [(4242, "resolve")]
+        self.s.do_SetGpuModeFlags("eco", 0)
+        self.assertEqual(self.started, [])
+        self.assertEqual(self.s.auto_waiting, ["resolve"])
+        self.assertTrue(self.s.waiting_manual)
+        self.assertEqual(self.ask_signals()[0][0][4].unpack(), (["resolve"], True))
+        st = self.s.state()["gpu"]
+        self.assertTrue(st["waiting_manual"])
+        self.s.modes.ac = True                              # смена питания ручное ожидание не снимает
+        self.s._auto_eco()
+        self.assertTrue(self.s.waiting_manual)
+        self.gpu.holders = lambda gpu=None: []               # закрыл Resolve сам
+        self.s._auto_watch_tick()
+        self.assertEqual(self.started, [True])
+        self.assertIsNone(self.s.auto_waiting)
+
+    def test_manual_eco_force_closes_now(self):
+        self.gpu.holders = lambda gpu=None: [(4242, "resolve")]
+        self.s.do_SetGpuModeFlags("eco", 1)                 # --force / «Закрыть и выключить»
+        self.assertEqual(self.started, [True])
+        self.assertIsNone(self.s.auto_waiting)
+
+    def test_manual_eco_free_card_switches_at_once(self):
+        self.gpu.holders = lambda gpu=None: [(900, "kwin_wayland")]   # только рабочий стол
+        self.s.do_SetGpuModeFlags("eco", 0)
+        self.assertEqual(self.started, [True])
+
+    def test_manual_wait_cancel_and_standard(self):
+        from unittest import mock
+        self.s.bus = mock.MagicMock()
+        self.gpu.holders = lambda gpu=None: [(4242, "resolve")]
+        self.s.do_SetGpuModeFlags("eco", 0)
+        self.s.do_SetGpuAutoAnswer("cancel")
+        self.assertIsNone(self.s.auto_waiting)
+        self.assertEqual(self.started, [])                  # «Отмена» — карта остаётся
+        self.s.do_SetGpuModeFlags("eco", 0)
+        self.s.do_SetGpuModeFlags("standard", 0)            # передумал — Стандарт снимает ожидание
+        self.assertIsNone(self.s.auto_waiting)
+        self.assertEqual(self.started, [False])
+
+    def test_auto_wait_is_not_cancelled(self):
+        """«Авто» ждёт DaVinci; «Отмена» не сбивает ожидание — закрыл программу, и карта выключилась сама."""
+        from unittest import mock
+        self.s.bus = mock.MagicMock()
+        self.gpu.holders = lambda gpu=None: [(4242, "resolve")]
+        self.s.do_SetGpuAutoEco(True)
+        self.assertEqual(self.s.auto_waiting, ["resolve"])
+        self.s.do_SetGpuAutoAnswer("cancel")
+        self.assertEqual(self.s.auto_waiting, ["resolve"])  # всё ещё ждёт
+        self.gpu.holders = lambda gpu=None: []
+        self.s._auto_watch_tick()
+        self.assertEqual(self.started, [True])
+
+    def test_charger_back_stops_waiting(self):
+        from unittest import mock
+        self.s.bus = mock.MagicMock()
+        self.gpu.holders = lambda gpu=None: [(4242, "steam")]
         self.s._auto_eco()
         self.s.modes.ac = True
-        self.assertFalse(self.s._auto_eco())
+        self.s._auto_eco()
         self.assertIsNone(self.s.auto_waiting)
+        self.assertEqual(self.s._auto_watch, 0)
         self.assertEqual(self.started, [])                  # карта и так включена
 
+    def test_on_ac_card_already_on(self):
+        self.s.modes.ac = True
+        self.s._auto_eco()
+        self.assertEqual(self.started, [])                  # карта и так включена
 
     def test_power_change_during_switch_is_not_lost(self):
         self.s.modes.ac = True                              # зарядку подключили — карта включалась…
         self.s.gpu.busy = True
-        self.assertFalse(self.s._auto_eco())                # …пока шло переключение, «Авто» ждёт
+        self.s._auto_eco()                                  # …пока шло переключение, «Авто» не вмешивается
         self.s.modes.ac = False                             # …и выдернули
-        fakesys._w(ROOT, "/sys/class/firmware-attributes/asus-armoury/attributes/dgpu_disable/current_value", 0)
         self.gpu.holders = lambda gpu=None: []
         self.s.gpu.busy = False
         self.s._gpu_done(None)
         self.assertEqual(self.started, [True])              # после переключения — Eco
 
-    def test_busy_card_is_retried_a_few_times(self):
-        self.s.gpu.retryable = True                         # экран входа держал карту при загрузке
-        for _ in range(5):
-            self.s._gpu_done("занята")
-            if self.s._auto_timer:
-                GLib.source_remove(self.s._auto_timer)
-                self.s._auto_timer = 0
-        self.assertEqual(self.s._auto_retries, self.s.AUTO_RETRIES)
-        from unittest import mock
-        with mock.patch.object(self.s.modes, "power_source_changed"), mock.patch.object(self.s, "_auto_eco"):
-            self.s.power_source_changed(True)               # смена питания — снова можно
-        self.assertEqual(self.s._auto_retries, 0)
+    def test_failure_is_not_retried(self):
+        """Не получилось — ошибка в окне, и никаких кругов (раньше «Авто» повторяло бесконечно)."""
+        self.s._gpu_done("BIOS отказал")
+        self.assertEqual(self.started, [])
+        self.assertEqual(self.s._auto_settle, 0)
 
     def test_stuck_driver_blocks_switching(self):
         class Hung:
+            pid = 0
+
             def poll(self):
                 return None
         self.gpu.stuck = Hung()
         try:
-            self.assertFalse(self.s._auto_eco())
+            self.s._auto_eco()
             self.assertEqual(self.started, [])                  # «Авто» не трогает
             with self.assertRaises(self.svc.Failed):
                 self.s.do_SetGpuModeFlags("standard", 0)

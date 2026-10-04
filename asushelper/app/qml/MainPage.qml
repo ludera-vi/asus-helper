@@ -89,8 +89,7 @@ ColumnLayout {
              : page.gpu.state === "off" ? "Eco" : Theme.tr("Стандарт")
         iconName: Qt.resolvedUrl("icons/gpu-symbolic.svg")
         info: (page.gpu.auto_eco && !page.gpu.switching
-               ? (page.gpu.auto_waiting ? Theme.tr("без сети — %1 занята, выключится, когда освободится").arg(page.dgpu)
-                  : page.gpu.state === "off" ? Theme.tr("без сети — %1 отключена").arg(page.dgpu)
+               ? (page.gpu.state === "off" ? Theme.tr("без сети — %1 отключена").arg(page.dgpu)
                                            : Theme.tr("от сети — %1 включена").arg(page.dgpu))
                : Theme.gpuInfo(page.gpu, page.nv))
               + (page.fans.gpu == null ? "" : page.fans.gpu === 0 ? Theme.tr("  ·  вентилятор стоит") : "  ·  " + page.fans.gpu + Theme.tr(" об/мин"))
@@ -100,10 +99,13 @@ ColumnLayout {
             spacing: Kirigami.Units.smallSpacing
             Tile {
                 text: "Eco"
-                subtitle: Theme.tr("%1 выключена").arg(page.dgpu)
+                subtitle: page.gpu.waiting_manual ? Theme.tr("ждёт: %1").arg(page.gpu.auto_waiting[0])
+                        : Theme.tr("%1 выключена").arg(page.dgpu)
                 iconName: "battery-profile-powersave-symbolic"
                 accent: Theme.positive
-                selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "eco" : page.gpu.state === "off")
+                selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "eco"
+                                                 : page.gpu.state === "off" || !!page.gpu.waiting_manual)
+                dimmed: !!page.gpu.waiting_manual
                 busy: !!page.gpu.switching && page.gpu.target === "eco"
                 enabled: !page.gpu.switching && !page.gpu.stuck && !!page.gpu.mux_hybrid
                 onClicked: (page.gpu.external || []).length ? displayWarning.open() : backend.setGpuMode("eco", false)
@@ -113,7 +115,8 @@ ColumnLayout {
                 subtitle: (page.gpu.igpu_name || "iGPU") + " + " + page.dgpu
                 iconName: "monitor-symbolic"
                 accent: Theme.highlight
-                selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "standard" : page.gpu.state !== "off")
+                selected: !page.gpu.auto_eco && (page.gpu.switching ? page.gpu.target === "standard"
+                                                 : page.gpu.state !== "off" && !page.gpu.waiting_manual)
                 busy: !!page.gpu.switching && page.gpu.target === "standard"
                 enabled: !page.gpu.switching && !page.gpu.stuck
                 onClicked: backend.setGpuMode("standard", false)
@@ -122,12 +125,13 @@ ColumnLayout {
                 text: Theme.tr("Авто")
                 // что работает прямо сейчас
                 subtitle: page.gpu.switching ? Theme.tr("переключается…")
-                        : page.gpu.auto_eco && page.gpu.auto_waiting ? Theme.tr("ждёт: ") + page.gpu.auto_waiting.join(", ")
+                        : page.gpu.auto_waiting && !page.gpu.waiting_manual ? Theme.tr("ждёт: %1").arg(page.gpu.auto_waiting[0])
                         : page.gpu.state === "off" ? Theme.tr("работает %1").arg(page.gpu.igpu_name || Theme.tr("встроенная"))
                         : Theme.tr("включена %1").arg(page.dgpu)
                 iconName: "automated-tasks-symbolic"
                 accent: Theme.neutral
                 selected: !!page.gpu.auto_eco
+                dimmed: !!page.gpu.auto_waiting && !page.gpu.waiting_manual
                 enabled: !page.gpu.switching && !page.gpu.stuck && !!page.gpu.mux_hybrid
                 onClicked: backend.setGpuAutoEco(true)
                 QQC2.ToolTip.visible: hovered
@@ -149,32 +153,33 @@ ColumnLayout {
             visible: !!page.gpu.error && !page.gpu.switching
             type: Kirigami.MessageType.Warning
             text: page.gpu.error || ""
-            actions: [
-                Kirigami.Action {
-                    visible: !!page.gpu.desktop_holds
-                    text: Theme.tr("Выйти из сеанса")
-                    icon.name: "system-log-out-symbolic"
-                    onTriggered: backend.logout()
-                }
-            ]
         }
         Kirigami.InlineMessage {
-            // ошибки нет (например, «Авто» ждёт), но карту держит сам рабочий стол — объяснить и предложить выход
+            // Eco (вручную или «Авто» без зарядки), а на NVIDIA работают программы — ждём, пока закроют,
+            // закрыть сразу или отменить
             Layout.fillWidth: true
-            visible: !page.gpu.error && !page.gpu.switching && !!page.gpu.desktop_holds
+            visible: !!page.gpu.auto_waiting && !page.gpu.switching
             type: Kirigami.MessageType.Information
-            text: Theme.tr("Рабочий стол KDE запущен до установки и работает на %1 — выключить её можно будет после выхода из сеанса и входа снова (один раз)").arg(page.dgpu)
+            text: Theme.tr("Ожидание закрытия: %1. Потом %2 выключится сама.")
+                  .arg((page.gpu.auto_waiting || []).join(", ")).arg(page.dgpu)
             actions: [
                 Kirigami.Action {
-                    text: Theme.tr("Выйти из сеанса")
-                    icon.name: "system-log-out-symbolic"
-                    onTriggered: backend.logout()
+                    text: Theme.tr("Закрыть и выключить")
+                    icon.name: "process-stop-symbolic"
+                    onTriggered: backend.answerGpuAuto("close")
+                },
+                Kirigami.Action {
+                    // отменить можно только свой Eco; «Авто» дождётся закрытия и выключит карту само
+                    visible: !!page.gpu.waiting_manual
+                    text: Theme.tr("Отмена")
+                    icon.name: "dialog-cancel-symbolic"
+                    onTriggered: backend.answerGpuAuto("cancel")
                 }
             ]
         }
         QQC2.Label {
             Layout.fillWidth: true
-            visible: !page.gpu.error && !page.gpu.desktop_holds && (page.gpu.holders || []).length > 0
+            visible: !page.gpu.error && (page.gpu.holders || []).length > 0
             text: Theme.tr("Держат %1: ").arg(page.dgpu) + (page.gpu.holders || []).join(", ")
             font: Kirigami.Theme.smallFont
             opacity: 0.7

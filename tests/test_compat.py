@@ -242,7 +242,7 @@ class GpuCompatTest(Base):
         os.symlink(ROOT + "/sys/bus/pci/drivers/nouveau", ROOT + NV + "/driver")
         self.assertEqual(gpu.driver(), "nouveau")
         with mock.patch.object(gpu, "holders", return_value=[]), \
-             mock.patch.object(gpu, "_unload_and_remove") as unload, \
+             mock.patch.object(gpu, "_remove_from_bus") as unload, \
              mock.patch.object(gpu.sysfs, "write") as write:
             with self.assertRaises(gpu.GpuError) as e:
                 gpu.turn_off()
@@ -427,3 +427,116 @@ class PpdTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------- зависания драйвера NVIDIA в ядре ----------
+class KernelHangTest(Base):
+    """Шаг, зависший внутри ядра, не убить — демон не должен висеть вместе с ним и не переключает до перезагрузки."""
+
+    def tearDown(self):
+        gpu.stuck = None
+        gpu._changed_at = None        # иначе следующий тест ждал бы паузу между переключениями
+
+    def hung_popen(self):
+        import subprocess
+        p = mock.Mock(pid=4242)
+        p.wait.side_effect = subprocess.TimeoutExpired("x", 1)
+        p.poll.return_value = None
+        return p
+
+    def test_driver_load_has_timeout(self):
+        """modprobe nvidia завис (как при подключении зарядки) — не «переключается» вечно, а сообщает."""
+        with mock.patch.object(gpu.subprocess, "Popen", return_value=self.hung_popen()):
+            with self.assertRaises(gpu.GpuError) as e:
+                gpu._load_driver()
+        self.assertIn("перезагрузка", str(e.exception))
+        self.assertTrue(gpu.is_stuck())
+
+    def test_sysfs_write_has_timeout(self):
+        """Запись в remove/dgpu_disable тоже делает дочерний процесс — завис он, а не демон."""
+        with mock.patch.object(gpu.sysfs, "ROOT", ""), \
+             mock.patch.object(gpu.subprocess, "Popen", return_value=self.hung_popen()) as popen:
+            with self.assertRaises(gpu.GpuError):
+                gpu._write("/sys/bus/pci/devices/0000:01:00.0/remove", 1)
+        self.assertEqual(popen.call_args[0][0][:2], ["sh", "-c"])
+        self.assertTrue(gpu.is_stuck())
+
+    def test_no_new_switch_while_stuck(self):
+        gpu.stuck = self.hung_popen()
+        sw = gpu.Switcher(lambda err: None)
+        self.assertFalse(sw.start(True))
+
+    def test_stuck_clears_when_process_finishes(self):
+        p = self.hung_popen()
+        gpu.stuck = p
+        self.assertTrue(gpu.is_stuck())
+        p.poll.return_value = 0                           # ядро отвисло само
+        self.assertFalse(gpu.is_stuck())
+
+
+class CleanupTest(Base):
+    """Уборка до переключения: программы на NVIDIA закрываются (TERM, потом KILL), рабочий стол — никогда."""
+
+    APP, STUBBORN = 2 ** 22 + 7, 2 ** 22 + 8
+
+    def test_term_then_kill(self):
+        held = [(self.APP, "game"), (self.STUBBORN, "stubborn"), (900, "kwin_wayland")]
+        sent = []
+
+        def kill(pid, sig):
+            sent.append((pid, sig))
+            if pid == self.APP or sig == gpu.signal.SIGKILL:
+                held[:] = [h for h in held if h[0] != pid]
+        with mock.patch.object(gpu, "holders", side_effect=lambda g=None: list(held)), \
+             mock.patch.object(gpu.os, "kill", side_effect=kill), \
+             mock.patch.object(gpu.time, "sleep"):
+            gpu._close("0000:01:00.0")
+        self.assertEqual(sent, [(self.APP, gpu.signal.SIGTERM), (self.STUBBORN, gpu.signal.SIGTERM),
+                                (self.STUBBORN, gpu.signal.SIGKILL)])
+        self.assertEqual(held, [(900, "kwin_wayland")])     # рабочий стол не тронут
+
+    def test_turn_on_cleans_first(self):
+        w(ARM + "/dgpu_disable/current_value", 1)
+        with mock.patch.object(gpu, "_cleanup") as cleanup, \
+             mock.patch.object(gpu, "_rescan", return_value=None), \
+             mock.patch.object(gpu.time, "sleep"):
+            with self.assertRaises(gpu.GpuError):
+                gpu.turn_on()                                 # карта в поддельной системе не появится
+        cleanup.assert_called_once()
+        self.assertEqual(read(ARM + "/dgpu_disable/current_value"), "0")
+
+
+class AutoSettleTest(Base):
+    """«Авто» переключает не в момент подключения зарядки, а когда события питания закончились."""
+
+    def setUp(self):
+        super().setUp()
+        from asushelper.daemon import service as svc
+        add_nvidia()
+        w(ARM + "/dgpu_disable/current_value", 1)
+        self.cfg.data["gpu"]["auto_eco"] = True
+        self.s = svc.Service(new_bus(), self.cfg)
+        self.started = []
+        self.s.gpu.start = lambda want_off, *a, **k: self.started.append(want_off) or True
+        self.s.modes.ac = False
+        self.s.AUTO_SETTLE_S = 1
+
+    def tearDown(self):
+        if self.s._auto_settle:
+            GLib.source_remove(self.s._auto_settle)
+
+    def test_charger_switch_is_delayed(self):
+        with mock.patch.object(self.s.modes, "power_source_changed",
+                               side_effect=lambda ac: setattr(self.s.modes, "ac", ac)):
+            self.s.power_source_changed(True)
+        self.assertEqual(self.started, [])                 # не в ту же секунду
+        run_loop(2300)   # timeout_add_seconds срабатывает с точностью до секунды
+        self.assertEqual(self.started, [False])            # через паузу — включить NVIDIA
+
+    def test_unplugged_again_during_pause(self):
+        with mock.patch.object(self.s.modes, "power_source_changed",
+                               side_effect=lambda ac: setattr(self.s.modes, "ac", ac)):
+            self.s.power_source_changed(True)
+            self.s.power_source_changed(False)             # передумали — снова батарея
+        run_loop(2300)   # timeout_add_seconds срабатывает с точностью до секунды
+        self.assertEqual(self.started, [])                 # карта и так выключена — ничего не делаем
