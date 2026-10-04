@@ -14,7 +14,7 @@ Replaces `asusd` / `asusctl`, `rog-control-center`, `supergfxctl` and `power-pro
 |---|---|
 | **Profile** | Quiet / Balanced / Turbo, Fn+F5, by power source (Balanced on AC, Quiet on battery — changeable); KDE sees the profile (battery widget, OSD on change) |
 | **Fans and power** | custom CPU/GPU fan curve per profile (drag the points), BIOS factory curves of every profile; on the *Power and CPU* page — PL1/PL2, NVIDIA Dynamic Boost and temperature limit, EPP, Turbo Boost |
-| **GPU** | **Eco** — NVIDIA turned off in BIOS without a reboot; **Standard** — hybrid; **Auto** — on with AC, off on battery (but not while a game or DaVinci uses it — it waits) |
+| **GPU** | **Eco** — NVIDIA turned off in BIOS without a reboot; **Standard** — hybrid; **Auto** — on with AC, off on battery. If programs run on NVIDIA (a game, DaVinci), nothing is closed silently: a notification asks *Close and turn off* or *Wait*, and when they are closed NVIDIA turns off by itself |
 | **Display** | Auto (60 Hz on battery, max on AC) / 60 / 240 Hz, panel Overdrive |
 | **Keyboard** | brightness (KDE OSD for the keys too), Aura effects, color, speed, turns off when idle, when to light up |
 | **Lid (Slash)** | brightness, 15 animations, static, battery level, light up on battery and with the lid closed |
@@ -69,7 +69,8 @@ An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AU
 ```
 asus-helperd (root, systemd)   — the only one writing to sysfs and HID; D-Bus org.asushelper.Daemon
   ├─ profiles, curves, limits, EPP, Turbo Boost, AC/battery automation, restore after sleep
-  ├─ GPU: unload driver → remove from the PCI bus → dgpu_disable (like Eco in G-Helper)
+  ├─ GPU: close programs on it (after asking) → remove from the PCI bus → dgpu_disable (like Eco in
+  │   G-Helper) → unload the driver if possible; every kernel step has a time limit
   ├─ Aura and Slash over HID (protocols from G-Helper), charge limit, sensor history
   └─ answers KDE in place of power-profiles-daemon (battery widget, Fn+F5)
 asus-helper (Qt/QML, session)  — tray icon, popup window (layer-shell), KDE OSD, display refresh rate
@@ -91,6 +92,26 @@ python3 -m asushelper.app --show   # window from the source tree
 python3 -m tests.hw_check --gpu    # full check of every feature on a real laptop
 ```
 Translations: `asushelper/i18n/en.json` (Russian string → English).
+
+### Testing on another distribution or desktop
+
+`record_logs/record.sh` records everything needed to sort out a problem — before the install, during and
+after it, across reboots and sleep — and collects it into one file named after the system:
+
+```bash
+git clone https://github.com/ludera-vi/asus-helper && cd asus-helper
+./record_logs/record.sh start                      # before installing — recording starts
+./install.sh                                       # install as usual
+# test: reboot, sleep, charger on/off, Eco / Standard / Auto, games on NVIDIA…
+./record_logs/record.sh mark "unplugged the charger"   # your own mark in the log (optional)
+./record_logs/record.sh status                     # is it recording
+./record_logs/record.sh stop                       # stop and collect one file
+```
+The result appears next to the script, e.g. `asus-helper_endeavouros_GNOME_wayland_2026-10-05_14-30.txt`:
+the system before and after (distribution, kernel, desktop, GPUs, packages, `asus-helper-cli diag`), the
+laptop state every 2 s (power, GPU, driver, profile, daemon, Eco waiting, sessions, hung processes — changes
+only), the journal of the kernel, daemon, login, sleep and power from the start of every boot, the tray app
+log, the installer log, all system warnings and errors. Details: [record_logs/README.md](record_logs/README.md).
 
 ## Credits and license
 

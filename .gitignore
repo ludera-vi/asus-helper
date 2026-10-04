@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .directory
+
+# собранные логи проверки (record_logs/record.sh stop)
+record_logs/asus-helper_*.txt
