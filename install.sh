@@ -218,8 +218,10 @@ if [ ${#conflicts[@]} -gt 0 ]; then
     if ask "$(L "Удалить их?" "Remove them?")"; then
         sudo -v || exit 1
         echo "### pacman -Rns ${conflicts[*]}" >> "$LOG"
-        sudo systemctl disable --now asusd.service supergfxd.service power-profiles-daemon.service tuned-ppd.service \
-            >> "$LOG" 2>&1
+        # по одной: несуществующая служба (например, supergfxd без supergfxctl) не мешает остановить остальные
+        for u in asusd supergfxd power-profiles-daemon tuned-ppd; do
+            systemctl cat "$u.service" >/dev/null 2>&1 && sudo systemctl disable --now "$u.service" >> "$LOG" 2>&1
+        done
         if sudo pacman -Rns --noconfirm "${conflicts[@]}" >> "$LOG" 2>&1; then
             ok "$(L "Удалено" "Removed"): ${conflicts[*]}"
             remember removed "${conflicts[@]}"
