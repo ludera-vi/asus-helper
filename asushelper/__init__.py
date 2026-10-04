@@ -1,6 +1,6 @@
 """Asus-helper — управление ноутбуком ASUS ROG в Linux (замена asusd / rog-control-center)."""
 
-__version__ = "0.3.2"
+__version__ = "0.4.0"
 
 PROFILES = ("quiet", "balanced", "performance")
 FANS = ("cpu", "gpu", "mid")   # какие есть у ноутбука — hardware.fans() / curve_fans()
