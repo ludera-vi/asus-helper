@@ -2,13 +2,13 @@
 
 **English · [Русский](README.ru.md)**
 
-**Your ASUS ROG / TUF laptop on Linux — as easy as G-Helper on Windows.** 💻
+**Your ASUS ROG / TUF laptop on Linux — as easy as G-Helper on Windows.** 
 
 Performance profiles, fans, power limits, turning NVIDIA off without a reboot, keyboard lighting, the Slash
 light bar on the lid and the battery — all in one tidy window next to the tray. No terminal, no reboots,
 no pile of separate tools. English and Russian interface.
 
-> **Works well on:** ✅ **KDE Plasma 6** and ✅ **GNOME** on **Arch Linux and derivatives**
+> **Works well on:** **KDE Plasma 6** and **GNOME** on **Arch Linux and derivatives**
 > (CachyOS, EndeavourOS, Manjaro, Garuda).
 >
 > **Still in development:** 🛠 other desktops (Hyprland, niri, Sway, COSMIC…) and other distributions
@@ -18,19 +18,19 @@ no pile of separate tools. English and Russian interface.
 Asus-helper replaces `asusctl` / `asusd`, `rog-control-center`, `supergfxctl` and `power-profiles-daemon` —
 no need to install them separately.
 
-## ✨ Features
+## Features
 
 | | |
 |---|---|
-| ⚡ **Profiles** | Quiet / Balanced / Turbo — with a click, with Fn+F5, or automatically by power source: Balanced on AC, Quiet on battery (changeable). Your desktop sees the profile: KDE battery widget, GNOME menu, a pop-up when it changes |
-| 🌀 **Fans and power** | your own CPU and GPU fan curve for every profile — just drag the points; the BIOS factory curves are always at hand. On the *Power and CPU* page — PL1/PL2 limits, NVIDIA Dynamic Boost and temperature limit, EPP, Turbo Boost |
-| 🎮 **GPU** | **Eco** — NVIDIA fully off (longer battery life), **Standard** — hybrid, **Auto** — on with the charger, off without it. All without a reboot and without logging out |
-| 🖥 **Display** | refresh rate: Auto (60 Hz on battery, maximum on AC) / 60 / 240 Hz, panel Overdrive |
-| ⌨️ **Keyboard** | brightness (the keys show a pop-up too), Aura effects, color and speed, turns off when you're not typing, when to light up (at boot, in sleep…) |
-| ✨ **Lid (Slash)** | brightness, 15 animations, static light, battery level; whether to light up on battery and with the lid closed |
-| 🔋 **Battery** | charge limit (e.g. 80 % for a long battery life), charts of temperature, fans and drain, charge over 24 h, battery health by day |
-| 🎨 **Appearance** | in KDE — *system* (KDE colors and style) or *original* — our own dark theme in the spirit of G-Helper; in GNOME and other desktops — original |
-| 🔑 **Little things** | the ROG key above the keyboard opens the window, boot sound; tray icon: color — profile, purple dot — NVIDIA is working |
+| **Profiles** | Quiet / Balanced / Turbo — with a click, with Fn+F5, or automatically by power source: Balanced on AC, Quiet on battery (changeable). Your desktop sees the profile: KDE battery widget, GNOME menu, a pop-up when it changes |
+| **Fans and power** | your own CPU and GPU fan curve for every profile — just drag the points; the BIOS factory curves are always at hand. On the *Power and CPU* page — PL1/PL2 limits, NVIDIA Dynamic Boost and temperature limit, EPP, Turbo Boost |
+| **GPU** | **Eco** — NVIDIA fully off (longer battery life), **Standard** — hybrid, **Auto** — on with the charger, off without it. All without a reboot and without logging out |
+| **Display** | refresh rate: Auto (60 Hz on battery, maximum on AC) / 60 / 240 Hz, panel Overdrive |
+|  **Keyboard** | brightness (the keys show a pop-up too), Aura effects, color and speed, turns off when you're not typing, when to light up (at boot, in sleep…) |
+| **Lid (Slash)** | brightness, 15 animations, static light, battery level; whether to light up on battery and with the lid closed |
+| **Battery** | charge limit (e.g. 80 % for a long battery life), charts of temperature, fans and drain, charge over 24 h, battery health by day |
+| **Appearance** | in KDE — *system* (KDE colors and style) or *original* — our own dark theme in the spirit of G-Helper; in GNOME and other desktops — original |
+| **Little things** | the ROG key above the keyboard opens the window, boot sound; tray icon: color — profile, purple dot — NVIDIA is working |
 
 **No model lists.** Asus-helper finds out what your particular laptop can do (from the kernel and its
 devices) and shows only that — no useless buttons. Tested on **ROG Zephyrus G16 GU605MZ** (Core Ultra 9 +
@@ -47,7 +47,7 @@ What if something is running on NVIDIA right then (a game, DaVinci Resolve)? **N
 silently.** A notification asks: *Close and turn off* or *Wait*. Choose wait — the tile dims and says
 "waiting: resolve", and once you finish and close the program, the GPU turns off by itself.
 
-## 🚀 Installation
+## Installation
 
 You need: an ASUS laptop (ROG, TUF, Zephyrus, Strix, Flow…), Arch or a derivative, KDE Plasma 6 or GNOME.
 To turn NVIDIA off — the `nvidia-open` (or `nvidia`) driver and MUX in hybrid mode (the default).
@@ -78,7 +78,7 @@ working after that one new login.
 
 An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AUR registration reopens.
 
-## 🕹 Usage
+## Usage
 
 - **Tray icon**: left click — window, right click — quick menu (profiles, Eco). The icon color is the
   profile (Quiet green, Balanced blue, Turbo red), a purple dot — NVIDIA is working.
@@ -90,7 +90,7 @@ An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AU
   `prime-run program` (in Steam: launch options `prime-run %command%`).
 - **Terminal**: `asus-helper-cli` — status, `asus-helper-cli --help` — all commands.
 
-## 🔄 Updating and uninstalling
+## Updating and uninstalling
 
 ```bash
 git pull && ./install.sh --update     # update: no questions, everything restarts by itself
@@ -101,7 +101,7 @@ Uninstalling brings the laptop back to how it was: factory power limits and fan 
 offers to bring back the programs the installer removed (e.g. `power-profiles-daemon`) and to remove the
 packages it installed. `./uninstall.sh --keep-config` — uninstall but keep the settings.
 
-## 🆘 If something is wrong
+## If something is wrong
 
 - **No icon on GNOME** — log out and back in (GNOME loads extensions at login). Make sure the AppIndicator
   extension is on: *Extensions → AppIndicator and KStatusNotifierItem Support*.
@@ -113,7 +113,7 @@ packages it installed. `./uninstall.sh --keep-config` — uninstall but keep the
 - **Anything else** — open an [issue](https://github.com/ludera-vi/asus-helper/issues) and attach the output
   of `asus-helper-cli diag` and `journalctl -u asus-helperd -b`. Thank you — it helps a lot! 🙏
 
-## 🔧 How it works (for the curious)
+## How it works (for the curious)
 
 ```
 asus-helperd (root, systemd)   — the only one writing to sysfs and HID; D-Bus org.asushelper.Daemon
@@ -134,7 +134,7 @@ whether that is safe (NVIDIA present, MUX in hybrid mode) and only then writes a
 (`/run/asus-helper/kwin.env`) or for GNOME and the GDM login screen (`/run/asus-helper/gnome.env` and a udev
 rule). Without NVIDIA, with MUX in "NVIDIA only" mode or without the daemon nothing changes.
 
-## 👩‍💻 For developers
+## For developers
 
 ```bash
 make test                          # tests on a fake sysfs, hardware is not touched
@@ -146,9 +146,9 @@ python3 -m tests.hw_check --gpu    # full check of every feature on a real lapto
 Translations: `asushelper/i18n/en.json` (Russian string → English). Pull requests and bug reports are very
 welcome.
 
-## ❤️ Author, credits and license
+## Author, credits and license
 
-Author — **Gunichev** ([@ludera-vi](https://github.com/ludera-vi)).
+Author — **Gunichev Ivan** ([@ludera-vi](https://github.com/ludera-vi)).
 
 The Aura lighting and Slash protocols and the profile logic come from
 [G-Helper](https://github.com/seerge/g-helper) (seerge, GPL-3.0) — a huge thank you!
