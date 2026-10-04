@@ -4,10 +4,9 @@ import os
 import tempfile
 import unittest
 
-ROOT = tempfile.mkdtemp(prefix="asushelper-sys-")
-CONF = tempfile.mkdtemp(prefix="asushelper-conf-")
-os.environ["ASUSHELPER_SYSROOT"] = ROOT
-os.environ["ASUSHELPER_CONFIG_DIR"] = CONF
+# setdefault: корень читается модулями один раз при импорте — общий для всех файлов тестов
+ROOT = os.environ.setdefault("ASUSHELPER_SYSROOT", tempfile.mkdtemp(prefix="asushelper-sys-"))
+CONF = os.environ.setdefault("ASUSHELPER_CONFIG_DIR", tempfile.mkdtemp(prefix="asushelper-conf-"))
 
 import gi  # noqa: E402
 gi.require_version("Gio", "2.0")

@@ -51,7 +51,6 @@
  "CPU PL1 (долговременный), Вт": "CPU PL1 (sustained), W",
  "CPU PL2 (кратковременный), Вт": "CPU PL2 (short boost), W",
  "CPU fPPT, Вт": "CPU fPPT, W",
- "CPU {0} °C · вентиляторы {1}/{2} об/мин": "CPU {0} °C · fans {1}/{2} rpm",
  "EPP «%s» не поддерживается (есть: %s)": "EPP \"%s\" is not supported (available: %s)",
  "EPP «{0}» не поддерживается: {1}": "EPP \"{0}\" is not supported: {1}",
  "Eco поддерживается": "Eco supported",
@@ -408,5 +407,12 @@
  "Оригинальное (тёмное)": "Original (dark)",
  "оформление: %s (%s)": "appearance: %s (%s)",
  "оформление → %s, перезапускаю окно": "appearance → %s, restarting the window",
- "сон: вентиляторы — по кривой BIOS": "sleep: fans follow the BIOS curve"
+ "сон: вентиляторы — по кривой BIOS": "sleep: fans follow the BIOS curve",
+ " · вентиляторы {0} об/мин": " · fans {0} rpm",
+ "CPU {0} °C": "CPU {0} °C",
+ "в настройках «%s» должен быть словарём — беру значения по умолчанию": "\"%s\" in the settings must be an object — using the defaults",
+ "ожидался объект JSON": "a JSON object was expected",
+ "видеокарта работает на драйвере {0}, а Eco умеет выключать её только с драйвером NVIDIA (пакет nvidia-open или nvidia)": "the GPU runs on the {0} driver, but Eco can turn it off only with the NVIDIA driver (package nvidia-open or nvidia)",
+ "режима «%s» у ядра нет (есть: %s)": "the kernel has no \"%s\" profile (available: %s)",
+ "режим BIOS «%s» не включился — применяю только настройки процессора и мощности": "BIOS profile \"%s\" was not set — applying only CPU and power settings"
 }

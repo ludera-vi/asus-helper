@@ -39,7 +39,8 @@ def feature_lengths(descriptor: bytes) -> dict[int, int]:
 def devices() -> list[dict]:
     """Все hidraw-устройства ASUS: [{dev, product, features: {id: длина}}]."""
     out = []
-    for h in sysfs.find("/sys/class/hidraw/hidraw*"):
+    # по номеру: hidraw2 раньше hidraw10
+    for h in sorted(sysfs.find("/sys/class/hidraw/hidraw[0-9]*"), key=lambda p: int(p.rsplit("hidraw", 1)[1])):
         uevent = sysfs.read(h + "/device/uevent") or ""
         hid_id = next((line.split("=", 1)[1] for line in uevent.splitlines() if line.startswith("HID_ID=")), "")
         parts = hid_id.split(":")

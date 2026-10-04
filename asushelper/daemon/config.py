@@ -76,8 +76,12 @@ def _merge(base: dict, over: dict) -> dict:
     """Рекурсивно накладывает over на base; неизвестные ключи из over сохраняются."""
     out = copy.deepcopy(base)
     for k, v in over.items():
-        if isinstance(v, dict) and isinstance(out.get(k), dict):
-            out[k] = _merge(out[k], v)
+        if isinstance(out.get(k), dict):
+            if isinstance(v, dict):
+                out[k] = _merge(out[k], v)
+            else:
+                # раздел испорчен (правили руками) — остаётся по умолчанию, иначе демон упал бы при старте
+                log.error(_("в настройках «%s» должен быть словарём — беру значения по умолчанию"), k)
         else:
             out[k] = v
     return out
@@ -91,7 +95,10 @@ class Config:
     def load(self) -> "Config":
         try:
             with open(self.path) as f:
-                self.data = _merge(DEFAULTS, json.load(f))
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError(_("ожидался объект JSON"))
+            self.data = _merge(DEFAULTS, data)
         except FileNotFoundError:
             log.info(_("нет %s — настройки по умолчанию"), self.path)
         except (OSError, ValueError) as e:

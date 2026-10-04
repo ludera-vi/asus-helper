@@ -218,7 +218,7 @@ class Service:
             h = gpu.holders()
             s["gpu"]["holders"] = gpu.names(h)
             # рабочий стол запущен до установки и работает на NVIDIA — поможет только новый вход
-            s["gpu"]["desktop_holds"] = any(c in gpu.DESKTOP for _, c in h)
+            s["gpu"]["desktop_holds"] = any(gpu.is_desktop(c) for _, c in h)
         return s
 
     # ---------- события ----------

@@ -164,8 +164,11 @@ class Tray:
                          + (_(" — Авто: от сети вкл., без сети выкл.") if g.get("auto_eco") else ""))
             if g.get("auto_waiting"):
                 lines.append(_("Ждёт, пока NVIDIA отпустят: ") + ", ".join(g["auto_waiting"]))
+        # вентиляторов у ноутбука может быть один, три или ни одного (ядро не показывает обороты)
+        rpm = "/".join(str(v) for v in (s.get("fans") or {}).values() if v is not None)
         if s.get("cpu_temp") is not None:
-            lines.append(_("CPU {0} °C · вентиляторы {1}/{2} об/мин").format(round(s['cpu_temp']), s['fans']['cpu'], s['fans']['gpu']))
+            lines.append(_("CPU {0} °C").format(round(s["cpu_temp"]))
+                         + (_(" · вентиляторы {0} об/мин").format(rpm) if rpm else ""))
         self.icon.setToolTip("Asus-helper\n" + "\n".join(lines))
 
 

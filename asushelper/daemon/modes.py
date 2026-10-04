@@ -104,19 +104,27 @@ class Modes:
     def _apply(self, name: str, write_profile: bool) -> None:
         self._cancel_timers()
         if write_profile and hw.profile() != name:
-            log.info(_("режим → %s"), name)
-            self._expected = name
-            if not hw.set_profile(name):
-                self._expected = None
-                return
-            self._schedule(FANS_DELAY_MS, self._apply_fans, name)
-            self._schedule(FANS_DELAY_MS + POWER_DELAY_MS, self._apply_power, name)
+            if self._write_profile(name):
+                self._schedule(FANS_DELAY_MS, self._apply_fans, name)
+                self._schedule(FANS_DELAY_MS + POWER_DELAY_MS, self._apply_power, name)
+            else:
+                # режима BIOS нет у ноутбука: кривые вентиляторов — от другого режима, их не трогаем
+                self._apply_power(name)
         else:
             # режим BIOS уже нужный — ждать нечего
             self._apply_fans(name)
             self._apply_power(name)
         self.current = name
         self.on_change()
+
+    def _write_profile(self, name: str) -> bool:
+        log.info(_("режим → %s"), name)
+        self._expected = name
+        if hw.set_profile(name):
+            return True
+        self._expected = None
+        log.warning(_("режим BIOS «%s» не включился — применяю только настройки процессора и мощности"), name)
+        return False
 
     def _apply_fans(self, name: str) -> None:
         if not hw.has_fan_curves():
@@ -190,6 +198,7 @@ class Modes:
     def _on_profile_event(self, fd, _cond) -> bool:
         os.lseek(fd, 0, os.SEEK_SET)
         name = os.read(fd, 64).decode().strip()
+        name = hw.FROM_KERNEL.get(name, name)
         if name == self._expected:
             self._expected = None
             return True

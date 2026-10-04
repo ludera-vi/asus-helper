@@ -31,16 +31,31 @@ PROFILE = "/sys/firmware/acpi/platform_profile"
 PROFILE_CHOICES = "/sys/firmware/acpi/platform_profile_choices"
 
 
+# Имена режимов у ядра разные: asus-wmi — quiet, новые ядра и другие драйверы (amd-pmf) — low-power.
+# Внутри программы всегда quiet / balanced / performance.
+KERNEL_NAMES = {"quiet": ("quiet", "low-power"), "balanced": ("balanced",), "performance": ("performance",)}
+FROM_KERNEL = {k: p for p, names in KERNEL_NAMES.items() for k in names}
+
+
 def profile() -> str | None:
-    return sysfs.read(PROFILE)
+    """Текущий режим в наших именах; незнакомое имя ядра (custom и т. п.) — как есть."""
+    v = sysfs.read(PROFILE)
+    return FROM_KERNEL.get(v, v)
 
 
 def profile_choices() -> list[str]:
-    return (sysfs.read(PROFILE_CHOICES) or "").split()
+    """Режимы, которые принимает ядро, в наших именах и нашем порядке."""
+    kernel = (sysfs.read(PROFILE_CHOICES) or "").split()
+    return [p for p, names in KERNEL_NAMES.items() if any(n in kernel for n in names)]
 
 
 def set_profile(name: str) -> bool:
-    return sysfs.write(PROFILE, name)
+    kernel = (sysfs.read(PROFILE_CHOICES) or "").split()
+    names = KERNEL_NAMES.get(name, (name,))
+    if kernel and not any(n in kernel for n in names):
+        log.info(_("режима «%s» у ядра нет (есть: %s)"), name, " ".join(kernel))
+        return False
+    return sysfs.write(PROFILE, next((n for n in names if n in kernel), names[0]))
 
 
 # ---------- EPP процессора (intel_pstate / amd-pstate) ----------
@@ -247,16 +262,20 @@ def cpu_temp() -> float | None:
 
 
 # ---------- питание и батарея ----------
+def _supplies(*kinds: str) -> list[str]:
+    """Источники питания самого ноутбука: без батарей и зарядок мышей, геймпадов (scope=Device)."""
+    return [d for d in sysfs.find("/sys/class/power_supply/*")
+            if sysfs.read(d + "/type") in kinds and sysfs.read(d + "/scope") != "Device"]
+
+
 def _supply(kind: str) -> str | None:
-    for d in sysfs.find("/sys/class/power_supply/*"):
-        if sysfs.read(d + "/type") == kind:
-            return d
-    return None
+    found = _supplies(kind)
+    return found[0] if found else None
 
 
 def on_ac() -> bool:
-    d = _supply("Mains")
-    return d is not None and sysfs.read(d + "/online") == "1"
+    """От сети: блок питания (Mains) или зарядка через USB-C (USB)."""
+    return any(sysfs.read(d + "/online") == "1" for d in _supplies("Mains", "USB"))
 
 
 def battery() -> dict | None:
@@ -265,12 +284,14 @@ def battery() -> dict | None:
         return None
     current = sysfs.read_int(d + "/current_now", 0)
     voltage = sysfs.read_int(d + "/voltage_now", 0)
+    # одни батареи сообщают ток (мкА), другие сразу мощность (мкВт)
+    power = current * voltage / 1e12 if current else sysfs.read_int(d + "/power_now", 0) / 1e6
     full = sysfs.read_int(d + "/charge_full") or sysfs.read_int(d + "/energy_full")
     design = sysfs.read_int(d + "/charge_full_design") or sysfs.read_int(d + "/energy_full_design")
     return {
         "capacity": sysfs.read_int(d + "/capacity"),
         "status": sysfs.read(d + "/status"),
-        "power_w": round(current * voltage / 1e12, 1),
+        "power_w": round(power, 1),
         "health": round(full * 100 / design) if full and design else None,
         "charge_limit": sysfs.read_int(d + "/charge_control_end_threshold"),
     }

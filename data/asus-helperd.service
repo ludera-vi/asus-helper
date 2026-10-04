@@ -3,7 +3,7 @@ Description=Asus-helper — режимы, вентиляторы и подсве
 After=systemd-udevd.service dbus.service
 Documentation=https://github.com/ludera-vi/asus-helper
 # Делают то же самое — вместе спорили бы за вентиляторы и режимы
-Conflicts=asusd.service power-profiles-daemon.service
+Conflicts=asusd.service power-profiles-daemon.service tuned-ppd.service
 
 [Service]
 Type=dbus

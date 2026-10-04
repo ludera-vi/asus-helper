@@ -41,17 +41,38 @@ class GpuError(Exception):
 
 # Рабочий стол и система: их нельзя закрывать никогда — это обрушит сеанс или всю систему.
 # Если NVIDIA держат они, значит рабочий стол запущен не только на встроенной видеокарте.
-DESKTOP = {"kwin_wayland", "kwin_x11", "kwin_wayland_wrapper", "Xwayland", "Xorg", "X", "plasmashell",
-           "ksmserver", "startplasma-wayland", "startplasma-x11", "gnome-shell", "mutter", "sway", "Hyprland",
-           "sddm", "sddm-helper", "sddm-greeter", "gdm", "gdm-wayland-session", "systemd", "systemd-logind"}
+DESKTOP = {
+    # KDE
+    "kwin_wayland", "kwin_x11", "kwin_wayland_wrapper", "plasmashell", "ksmserver",
+    "startplasma-wayland", "startplasma-x11",
+    # X и Xwayland
+    "Xwayland", "Xorg", "X",
+    # другие рабочие столы и композиторы
+    "gnome-shell", "mutter", "sway", "Hyprland", "niri", "cosmic-comp", "gamescope", "gamescope-wl",
+    "labwc", "wayfire", "weston", "river", "hyprland", "dwl", "Xfwm4", "xfwm4", "marco",
+    "muffin", "cinnamon", "budgie-wm", "openbox", "i3",
+    # экраны входа
+    "sddm", "sddm-helper", "sddm-greeter", "sddm-greeter-qt6", "gdm", "gdm-wayland-session", "gdm-x-session",
+    "plasmalogin", "plasmalogin-helper", "plasma-login-greeter", "startplasma-login-wayland",
+    "lightdm", "lightdm-gtk-greeter", "greetd", "ly", "regreet", "tuigreet",
+    "systemd", "systemd-logind"}
+# Ядро хранит имя процесса (/proc/PID/comm) обрезанным до 15 символов: kwin_wayland_wrapper → kwin_wayland_wr
+COMM_LEN = 15
+DESKTOP_COMM = {n[:COMM_LEN] for n in DESKTOP}
+# Экраны входа работают от системных пользователей (sddm, gdm, plasmalogin…): UID ниже 1000
+SYSTEM_UID_MAX = 999
+
+
+def is_desktop(comm: str) -> bool:
+    return comm[:COMM_LEN] in DESKTOP_COMM
 
 
 def is_protected(pid: int, comm: str) -> bool:
-    """Процесс, который нельзя закрыть: системный (root, PID 1) или часть рабочего стола."""
-    if pid == 1 or comm in DESKTOP:
+    """Процесс, который нельзя закрыть: системный (root, системный пользователь, PID 1) или часть рабочего стола."""
+    if pid == 1 or is_desktop(comm):
         return True
     try:
-        return os.stat(f"/proc/{pid}").st_uid == 0
+        return os.stat(f"/proc/{pid}").st_uid <= SYSTEM_UID_MAX
     except OSError:
         return False
 
@@ -138,6 +159,13 @@ def find_gpu() -> str | None:
         if sysfs.read(d + "/vendor") == "0x10de" and (sysfs.read(d + "/class") or "").startswith("0x03"):
             return os.path.basename(d)
     return None
+
+
+def driver(gpu: str | None = None) -> str | None:
+    """Драйвер видеокарты: nvidia, nouveau… или None (не загружен)."""
+    gpu = gpu or find_gpu()
+    link = sysfs.path(f"{PCI}/{gpu}/driver") if gpu else None
+    return os.path.basename(os.path.realpath(link)) if link and os.path.exists(link) else None
 
 
 def state() -> str:
@@ -436,6 +464,10 @@ def turn_off(force: bool = False, ignore_displays: bool = False) -> None:
         return
     if not mux_hybrid():
         raise GpuError(_("MUX в режиме «только NVIDIA» — сначала переключите MUX в гибрид и перезагрузитесь"))
+    if gpu and (drv := driver(gpu)) not in (None, "nvidia"):
+        # выгружать умеем только драйвер NVIDIA; снять карту с шины под другим драйвером — риск зависания
+        raise GpuError(_("видеокарта работает на драйвере {0}, а Eco умеет выключать её только с драйвером NVIDIA "
+                         "(пакет nvidia-open или nvidia)").format(drv))
 
     if gpu:
         _settle()                   # до проверки: за время паузы карту мог занять, например, экран входа

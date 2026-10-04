@@ -145,7 +145,7 @@ else warn "$(L "Не хватает пакетов" "Missing packages"): ${missi
 
 # Ставим только на чистую систему: эти программы делают то же самое и будут спорить с демоном
 conflicts=()
-for p in asusctl rog-control-center power-profiles-daemon supergfxctl envycontrol optimus-manager; do
+for p in asusctl rog-control-center power-profiles-daemon tuned-ppd supergfxctl envycontrol optimus-manager; do
     pacman -Q "$p" >/dev/null 2>&1 && conflicts+=("$p")
 done
 old=()
@@ -280,6 +280,10 @@ if systemctl is-active -q asus-helperd; then ok "$(L "asus-helperd работа�
 else fail "$(L "asus-helperd не запустился" "asus-helperd failed to start"): journalctl -u asus-helperd"; FAILED=1; fi
 if "$BIN/asus-helper-cli" >>"$LOG" 2>&1; then ok "$(L "Демон отвечает" "Daemon responds")"
 else fail "$(L "Демон не отвечает" "Daemon does not respond") ($LOG)"; FAILED=1; fi
+
+# Что демон нашёл у этого ноутбука: человек сразу видит, что будет работать, а чего у модели нет
+title "$(L "Что нашлось у ноутбука" "What this laptop has")"
+"$BIN/asus-helper-cli" diag 2>>"$LOG" | sed 's/^/  /'
 
 title "$(L "Итог" "Summary")"
 for r in "${RESULTS[@]}"; do echo "  $r"; done
