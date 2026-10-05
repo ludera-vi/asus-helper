@@ -34,6 +34,8 @@ ColumnLayout {
         Layout.fillWidth: true
         QQC2.ToolButton {
             icon.name: "go-previous"
+            // своя тема: значок цветом текста (без этого после смены светлой/тёмной темы noctalia он остаётся старым)
+            Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
             text: Theme.tr("Назад")
             display: QQC2.AbstractButton.IconOnly
             onClicked: page.back()
@@ -125,7 +127,7 @@ ColumnLayout {
             spacing: Kirigami.Units.smallSpacing
             visible: (page.st.epp_choices || []).length > 0     // процессор поддерживает EPP
             QQC2.Label { text: Theme.tr("Приоритет процессора"); Layout.fillWidth: true; elide: Text.ElideRight }
-            QQC2.ComboBox {
+            AppComboBox {
                 // под подписью и во всю ширину: длинное «Как у режима: …» не раздвигает окно
                 id: epp
                 Layout.fillWidth: true
@@ -142,9 +144,10 @@ ColumnLayout {
             }
         }
 
-        QQC2.Button {
+        AppButton {
             text: Theme.tr("Мощность — как в BIOS")
             icon.name: "edit-undo"
+            Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
             enabled: Object.keys(page.pcfg.power_limits || {}).length > 0
             onClicked: backend.resetPowerLimits(page.profile)
         }

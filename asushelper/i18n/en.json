@@ -423,5 +423,10 @@
  "Как у режима: «%1»": "Profile default: \"%1\"",
  "Система": "System",
  "Оригинал": "Original",
- " — окно перезапустится": " — the window restarts"
+ " — окно перезапустится": " — the window restarts",
+ "// Asus-helper: niri только на встроенной видеокарте (см. gpu.py)\n": "// Asus-helper: niri on the integrated GPU only (see gpu.py)\n",
+ "# Asus-helper: niri только на встроенной видеокарте (см. gpu.py)\n": "# Asus-helper: niri on the integrated GPU only (see gpu.py)\n",
+ "рабочий стол niri: %s": "niri desktop: %s",
+ "Как в noctalia": "System (noctalia)",
+ "тема noctalia: цвета обновлены (%s)": "noctalia theme: colors updated (%s)"
 }

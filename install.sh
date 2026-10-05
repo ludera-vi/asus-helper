@@ -1,5 +1,5 @@
 #!/bin/bash
-# Asus-helper installer (Arch and derivatives; KDE Plasma 6, GNOME and others) / установщик.
+# Asus-helper installer (Arch and derivatives; KDE Plasma 6, GNOME, niri and others) / установщик.
 # First finds out the desktop and the laptop, then talks only about them. Missing packages — offers to install,
 # asusctl, power-profiles-daemon, supergfxctl, envycontrol — offers to remove.
 # Run as a regular user: ./install.sh (sudo asks itself). Remove: ./uninstall.sh
@@ -86,14 +86,14 @@ elif [ "$UILANG" = en ]; then
 fi
 
 # ---------- рабочий стол ----------
-# Всё дальше — только про него: KDE, GNOME или другой (niri, Hyprland, Sway, COSMIC…)
+# Всё дальше — только про него: KDE, GNOME, niri или другой (Hyprland, Sway, COSMIC…)
 desk_raw="${XDG_CURRENT_DESKTOP:-${XDG_SESSION_DESKTOP:-${DESKTOP_SESSION:-}}}"
 case "${desk_raw^^}" in
     *KDE*|*PLASMA*) DESK=kde;   DESK_NAME="KDE Plasma" ;;
     *GNOME*)        DESK=gnome; DESK_NAME="GNOME $(gnome-shell --version 2>/dev/null | grep -o '[0-9][0-9.]*' | head -1)" ;;
     "")             DESK=none;  DESK_NAME="" ;;
     *HYPRLAND*)     DESK=other; DESK_NAME=Hyprland ;;
-    *NIRI*)         DESK=other; DESK_NAME=niri ;;
+    *NIRI*)         DESK=niri;  DESK_NAME="niri $(niri --version 2>/dev/null | awk '{print $2}')" ;;
     *SWAY*)         DESK=other; DESK_NAME=Sway ;;
     *COSMIC*)       DESK=other; DESK_NAME=COSMIC ;;
     *)              DESK=other; DESK_NAME="${desk_raw%%:*}" ;;
@@ -101,11 +101,18 @@ esac
 DESK_NAME="${DESK_NAME% }"
 APPINDICATOR=appindicatorsupport@rgcjonas.gmail.com
 GNOMEEXT=asus-helper@ludera-vi.github.com     # своё расширение: карточки GNOME и окно под треем
+NIRI_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/niri"
+NIRI_OWN="$NIRI_DIR/asus-helper.kdl"          # клавиша ROG — своя часть конфига niri, человек может её править
+NIRI_MARK="// Asus-helper"                     # строки, которые установщик добавил в config.kdl (uninstall.sh их уберёт)
 
 # ---------- оформление окна ----------
-# Выбор есть только в KDE: «как в системе» — это цвета и стиль KDE. В других средах окно всегда в своей теме.
+# Выбор есть только в KDE: «как в системе» — это цвета и стиль KDE. В niri с noctalia окно само берёт тему
+# noctalia («как в системе», без вопроса; сменить — кнопкой внизу окна). В других средах — своя тема.
 APPCFG="${XDG_CONFIG_HOME:-$HOME/.config}/asus-helper/app.json"
 UITHEME=$(grep -o '"theme": *"[a-z]*"' "$APPCFG" 2>/dev/null | grep -o '[a-z]*"$' | tr -d '"')
+NOCTALIA=0
+[ "$DESK" = niri ] && command -v noctalia >/dev/null && NOCTALIA=1
+[ $NOCTALIA = 1 ] && [ -z "$UITHEME" ] && UITHEME=system
 if [ "$DESK" = kde ] && { [ -z "$UITHEME" ] || [ $UPDATE = 0 ]; }; then
     echo
     echo "  ${B}$(L "Оформление окна" "Window appearance")${R}"
@@ -156,6 +163,10 @@ else fail "$(L "Нет" "Missing") /sys/firmware/acpi/platform_profile"; problem
 case $DESK in
     kde)   ok "KDE Plasma${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}" ;;
     gnome) ok "$DESK_NAME${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}" ;;
+    niri)  ok "$DESK_NAME${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}"
+           if pgrep -x noctalia >/dev/null || pgrep -f 'noctalia-shell|DankMaterialShell' >/dev/null; then :
+           else explain "$(L "Значок появится, если в панели есть трей (StatusNotifierItem — noctalia, waybar с модулем tray)" "The icon appears if your bar has a tray (StatusNotifierItem — noctalia, waybar with the tray module)")"; fi
+           [ -f "$NIRI_DIR/config.kdl" ] || warn "$(L "Нет $NIRI_DIR/config.kdl — клавишу ROG и Eco без выхода из сеанса настроить не получится" "No $NIRI_DIR/config.kdl — the ROG key and Eco without logging out cannot be set up")" ;;
     other) ok "$(L "Рабочий стол" "Desktop"): $DESK_NAME${XDG_SESSION_TYPE:+ ($XDG_SESSION_TYPE)}"
            explain "$(L "Значок появится, если в панели есть трей (StatusNotifierItem — например, waybar с модулем tray)" "The icon appears if your bar has a tray (StatusNotifierItem — e.g. waybar with the tray module)")" ;;
     none)  warn "$(L "Рабочий стол не определён (установка не из графического сеанса?) — демон и asus-helper-cli работают везде" "Desktop not detected (not installing from a graphical session?) — the daemon and asus-helper-cli work anywhere")" ;;
@@ -249,6 +260,10 @@ case $DESK in
     gnome) info "$(L "Значок ${B}Asus-helper${R} в верхней панели GNOME при входе (расширение AppIndicator будет включено)" "${B}Asus-helper${R} icon in the GNOME top bar at login (the AppIndicator extension gets enabled)")"
            info "$(L "Расширение GNOME ${B}Asus-helper${R}: карточки при смене режима и подсветки, окно — в правом верхнем углу под треем" "GNOME extension ${B}Asus-helper${R}: pop-ups on profile and lighting changes, the window opens top-right under the tray")"
            explain "$(L "Клавиша ROG открывает окно: «Настройки → Клавиатура → Свои комбинации клавиш»" "The ROG key opens the window: Settings → Keyboard → Custom Shortcuts")" ;;
+    niri)  info "$(L "Значок ${B}Asus-helper${R} в трее панели при входе, окно — у трея" "${B}Asus-helper${R} icon in the bar tray at login, the window opens next to it")"
+           info "$(L "Клавиша ROG открывает окно: в конфиг niri добавится файл asus-helper.kdl" "The ROG key opens the window: asus-helper.kdl is added to the niri config")"
+           [ $NOCTALIA = 1 ] && info "$(L "Окно — в цветах темы noctalia и меняется вместе с ней (шаблон noctalia asus-helper.toml)" "The window uses the noctalia theme colors and follows it (noctalia template asus-helper.toml)")"
+           explain "$(L "В $NIRI_DIR/config.kdl — две строки include в конце (копия: config.kdl.asus-helper.bak)" "Two include lines at the end of $NIRI_DIR/config.kdl (backup: config.kdl.asus-helper.bak)")" ;;
     none)  info "$(L "Значок ${B}Asus-helper${R} в трее при входе в систему" "${B}Asus-helper${R} tray icon at login")" ;;
     *)     info "$(L "Значок ${B}Asus-helper${R} в трее при входе в систему, клавиша ROG открывает окно" "${B}Asus-helper${R} tray icon at login, the ROG key opens the window")" ;;
 esac
@@ -257,10 +272,12 @@ info "$(L "Настройки: /etc/asus-helper (если их нет — пер
 case $DESK in
     kde)   info "$(L "Рабочий стол KDE — на встроенной видеокарте (если есть NVIDIA): так Eco включается без выхода из сеанса" "KDE desktop runs on the integrated GPU (if NVIDIA is present): then Eco works without logging out")" ;;
     gnome) info "$(L "GNOME и экран входа GDM — на встроенной видеокарте (если есть NVIDIA): так Eco включается без выхода из сеанса" "GNOME and the GDM login screen run on the integrated GPU (if NVIDIA is present): then Eco works without logging out")" ;;
+    niri)  info "$(L "niri — на встроенной видеокарте (если есть NVIDIA): так Eco включается без выхода из сеанса" "niri runs on the integrated GPU (if NVIDIA is present): then Eco works without logging out")"
+           explain "$(L "Программы, запущенные из niri, тоже на встроенной; на NVIDIA — через prime-run (Steam: prime-run %command%)" "Programs started from niri use it too; on NVIDIA — via prime-run (Steam: prime-run %command%)")" ;;
 esac
-if [ $DESK = kde ] || [ $DESK = gnome ]; then
+if [ $DESK = kde ] || [ $DESK = gnome ] || [ $DESK = niri ]; then
     explain "$(L "Это решает демон при загрузке; без NVIDIA или в режиме MUX «только NVIDIA» ничего не меняется" "The daemon decides this at boot; without NVIDIA or with MUX in \"NVIDIA only\" nothing changes")"
-    [ $DESK = gnome ] && explain "$(L "Мониторы, подключённые к выходам NVIDIA, в этом случае не работают" "Monitors connected to NVIDIA outputs do not work in this case")"
+    [ $DESK != kde ] && explain "$(L "Мониторы, подключённые к выходам NVIDIA, в этом случае не работают" "Monitors connected to NVIDIA outputs do not work in this case")"
 fi
 echo
 ask "$(L "Продолжить?" "Continue?")" || { info "$(L "Ничего не изменено" "Nothing changed")"; exit 0; }
@@ -316,7 +333,7 @@ step "$(L "Программа, служба, права, ярлык, автоз�
 reload_system() {
     sudo busctl call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus ReloadConfig &&
     sudo udevadm control --reload &&
-    sudo udevadm trigger --subsystem-match=drm --action=add && sudo udevadm settle &&
+    sudo udevadm trigger --subsystem-match=drm --action=change && sudo udevadm settle &&
     sudo systemctl daemon-reload &&
     systemctl --user daemon-reload &&
     { command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1 || true; }
@@ -341,7 +358,30 @@ os.makedirs(os.path.dirname(path), exist_ok=True)
 json.dump(data, open(path, "w"), indent=2)
 PY
 }
-[ $DESK = kde ] && step "$(L "Оформление: " "Appearance: ")$( [ "$UITHEME" = original ] && L "оригинальное" "original" || L "как в системе" "system")" save_theme
+{ [ $DESK = kde ] || [ $NOCTALIA = 1 ]; } &&
+    step "$(L "Оформление: " "Appearance: ")$( [ "$UITHEME" = original ] && L "оригинальное" "original" || L "как в системе" "system")" save_theme
+
+# niri с noctalia: шаблон noctalia пишет цвета её темы в ~/.config/asus-helper/noctalia-colors.json при каждой
+# смене темы, обоев или светлой/тёмной; окно следит за файлом. Свой файл в ~/.config/noctalia (noctalia читает
+# оттуда все *.toml), его убирает uninstall.sh
+NOCTALIA_TOML="${XDG_CONFIG_HOME:-$HOME/.config}/noctalia/asus-helper.toml"
+configure_noctalia() {
+    mkdir -p "$(dirname "$NOCTALIA_TOML")" &&
+    cat > "$NOCTALIA_TOML" <<EOF
+# Asus-helper: $(L "окно Asus-helper в цветах темы noctalia. Убрать — ./uninstall.sh" "the Asus-helper window in the noctalia theme colors. Remove — ./uninstall.sh")
+[theme.templates.user.asus_helper]
+input_path  = "/usr/local/share/asus-helper/noctalia-colors.json"
+output_path = "\$XDG_CONFIG_HOME/asus-helper/noctalia-colors.json"
+EOF
+    noctalia msg config-reload >/dev/null 2>&1
+    sleep 1
+    noctalia msg templates-apply >/dev/null 2>&1
+    # шаблон отрисовывается в фоне — ждём файл до 5 с (без него окно запустится в оригинальной теме)
+    local out="${XDG_CONFIG_HOME:-$HOME/.config}/asus-helper/noctalia-colors.json"
+    for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q '"source": "noctalia"' "$out" 2>/dev/null && return 0; sleep 0.5; done
+    return 1
+}
+[ $NOCTALIA = 1 ] && step "$(L "Тема noctalia для окна (шаблон asus-helper.toml)" "noctalia theme for the window (template asus-helper.toml)")" configure_noctalia
 
 step "$(L "Демон asus-helperd включён" "asus-helperd daemon enabled")" sudo systemctl enable asus-helperd.service
 step "$(L "Демон запущен с новой версией" "Daemon started with the new version")" sudo systemctl restart asus-helperd.service
@@ -358,6 +398,54 @@ fi
 if [ $DESK = gnome ] && [ -e /run/asus-helper/mutter-igpu-only ] &&
    "$BIN/asus-helper-cli" gpu 2>/dev/null | grep -qE 'gnome-shell|Xwayland'; then
     need_relogin=1
+fi
+
+# niri: своя часть конфига (клавиша ROG) и настройка демона «только встроенная видеокарта» подключаются
+# строками include в конце config.kdl. optional=true: нет файла (демон не запущен, программа удалена) — niri
+# работает как обычно. Конфиг с ошибкой niri не примет — проверяем и при ошибке возвращаем копию.
+configure_niri() {
+    local cfg="$NIRI_DIR/config.kdl"
+    [ -f "$cfg" ] || return 1
+    if [ ! -e "$NIRI_OWN" ]; then
+        cat > "$NIRI_OWN" <<EOF
+$NIRI_MARK: $(L "клавиша, которая открывает окно (ROG / Armoury Crate — XF86Launch1). Можно менять — установщик этот файл больше не трогает." "the key that opens the window (ROG / Armoury Crate — XF86Launch1). Edit freely — the installer does not touch this file again.")
+binds {
+    XF86Launch1 hotkey-overlay-title="Asus-helper" { spawn "asus-helper"; }
+}
+EOF
+    fi
+    # niri заново решает, какие видеокарты не трогать: если он уже держит NVIDIA (например, ссылку udev раньше
+    # создавало старое правило), он её отпустит
+    grep -qF "$NIRI_MARK" "$cfg" && { niri msg action load-config-file >/dev/null 2>&1; return 0; }
+    cp -a "$cfg" "$cfg.asus-helper.bak" &&
+    cat >> "$cfg" <<EOF
+
+$NIRI_MARK: $(L "клавиша окна и NVIDIA (Eco) без выхода из сеанса. Убрать — ./uninstall.sh" "window key and NVIDIA (Eco) without logging out. Remove — ./uninstall.sh")
+include optional=true "asus-helper.kdl"
+include optional=true "/run/asus-helper/niri.kdl"
+EOF
+    if ! niri validate -c "$cfg" >/dev/null 2>&1; then
+        cp -a "$cfg.asus-helper.bak" "$cfg"
+        return 1
+    fi
+    niri msg action load-config-file >/dev/null 2>&1
+    true
+}
+[ $DESK = niri ] && step "$(L "Конфиг niri: клавиша ROG и NVIDIA (asus-helper.kdl)" "niri config: ROG key and NVIDIA (asus-helper.kdl)")" configure_niri
+
+# niri читает окружение (niri.env) только при входе. Если сейчас он держит NVIDIA — нужен один выход
+if [ $DESK = niri ] && grep -q mesa /run/asus-helper/niri.env 2>/dev/null &&
+   "$BIN/asus-helper-cli" gpu 2>/dev/null | grep -qwE 'niri|Xwayland|xwayland-satellite'; then
+    need_relogin=1
+fi
+
+# Экран входа SDDM на X11 подхватил NVIDIA до установки и держит её, пока не перезапустится (он остаётся в фоне
+# и после входа). Новый Xorg-конфиг (sddm.conf.d/asus-helper.conf) подействует только после перезагрузки —
+# выхода из сеанса мало. Да и падение этого Xorg закрыло бы сеанс, поэтому до перезагрузки лучше не ждать
+need_reboot=0
+if pgrep -x sddm >/dev/null && "$BIN/asus-helper-cli" gpu 2>/dev/null | grep -qw Xorg &&
+   pgrep -u root -x Xorg >/dev/null; then
+    need_reboot=1
 fi
 
 # GNOME: трей — расширение AppIndicator, карточки и окно под треем — своё расширение Asus-helper.
@@ -417,6 +505,7 @@ echo
 if [ $FAILED -eq 0 ]; then
     case $DESK in
         gnome) echo "  ${GREEN}${B}$(L "Готово." "Done.")${R} $(L "Значок Asus-helper — в верхней панели GNOME; клавиша ROG открывает окно." "The Asus-helper icon is in the GNOME top bar; the ROG key opens the window.")" ;;
+        niri)  echo "  ${GREEN}${B}$(L "Готово." "Done.")${R} $(L "Значок Asus-helper — в трее панели; клавиша ROG открывает окно (сменить — $NIRI_OWN)." "The Asus-helper icon is in the bar tray; the ROG key opens the window (change it in $NIRI_OWN).")" ;;
         *)     echo "  ${GREEN}${B}$(L "Готово." "Done.")${R} $(L "Значок Asus-helper — в трее; клавиша ROG открывает окно." "The Asus-helper icon is in the tray; the ROG key opens the window.")" ;;
     esac
 else
@@ -432,7 +521,20 @@ EOF
 
 # Рабочий стол запущен до установки и держит NVIDIA: настройка «KDE только на встроенной видеокарте»
 # подействует со следующего входа. Без этого Eco не выключит карту — говорим прямо и предлагаем выйти.
-if [ $FAILED -eq 0 ] && [ $need_relogin = 1 ] && [ $DESK = gnome ]; then
+if [ $FAILED -eq 0 ] && [ $need_reboot = 1 ]; then
+    echo "  ${YELLOW}${B}$(L "Нужна одна перезагрузка." "One reboot is needed.")${R}"
+    explain "$(L "Экран входа SDDM (Xorg) запустился до установки и держит NVIDIA — выключить её (Eco) нельзя, а выход из сеанса его не перезапустит." \
+                 "The SDDM login screen (Xorg) started before the install and holds NVIDIA — it cannot be turned off (Eco), and logging out does not restart it.")"
+    explain "$(L "После перезагрузки экран входа и рабочий стол будут на встроенной видеокарте, и Eco заработает. Это нужно один раз." \
+                 "After a reboot the login screen and the desktop use the integrated GPU and Eco works. Needed once.")"
+    explain "$(L "До перезагрузки лучше не переключать видеокарту и режим Турбо." "Until then better not switch the GPU or the Turbo profile.")"
+    if ask "$(L "Перезагрузить сейчас? (сначала сохрани открытые документы)" "Reboot now? (save your open documents first)")" Y; then
+        systemctl reboot
+    else
+        explain "$(L "Перезагрузись позже сам." "Reboot later yourself.")"
+    fi
+    echo
+elif [ $FAILED -eq 0 ] && [ $need_relogin = 1 ] && [ $DESK = gnome ]; then
     echo "  ${YELLOW}${B}$(L "Нужен один выход из сеанса." "One log out is needed.")${R}"
     if [ -e /run/asus-helper/mutter-igpu-only ] && "$BIN/asus-helper-cli" gpu 2>/dev/null | grep -qE 'gnome-shell|Xwayland'; then
         explain "$(L "GNOME запустился до установки и сейчас работает на NVIDIA — выключить её (Eco) нельзя." \
@@ -447,6 +549,18 @@ if [ $FAILED -eq 0 ] && [ $need_relogin = 1 ] && [ $DESK = gnome ]; then
         gnome-session-quit --logout >/dev/null 2>&1 &
     else
         explain "$(L "Выйди позже сам: меню в правом верхнем углу → Выключение → Выйти." "Log out later yourself: top-right menu → Power Off → Log Out.")"
+    fi
+    echo
+elif [ $FAILED -eq 0 ] && [ $need_relogin = 1 ] && [ $DESK = niri ]; then
+    echo "  ${YELLOW}${B}$(L "Нужен один выход из сеанса." "One log out is needed.")${R}"
+    explain "$(L "niri запустился до установки и сейчас держит NVIDIA — выключить её (Eco) нельзя." \
+                 "niri started before the install and holds NVIDIA now — it cannot be turned off (Eco).")"
+    explain "$(L "После выхода и входа niri будет на встроенной видеокарте, и Eco заработает. Это нужно один раз." \
+                 "After logging out and back in niri uses the integrated GPU and Eco works. Needed once.")"
+    if ask "$(L "Выйти из сеанса сейчас? (сначала сохрани открытые документы)" "Log out now? (save your open documents first)")" Y; then
+        niri msg action quit --skip-confirmation >/dev/null 2>&1
+    else
+        explain "$(L "Выйди позже сам: Ctrl+Alt+Delete или меню сеанса панели → Выйти." "Log out later yourself: Ctrl+Alt+Delete or the bar's session menu → Log out.")"
     fi
     echo
 elif [ $FAILED -eq 0 ] && [ $need_relogin = 1 ]; then

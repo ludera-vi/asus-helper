@@ -325,6 +325,72 @@ class GnomeTest(Base):
         remove.assert_not_called()
 
 
+# ---------- niri: рабочий стол только на встроенной видеокарте ----------
+class NiriTest(GnomeTest):
+    def test_hybrid_niri_igpu_only(self):
+        self.hybrid()
+        gpu.write_niri_env()
+        self.assertIn(f'ignore-drm-device "{gpu.NIRI_DGPU}"', read(gpu.NIRI_KDL))
+        self.assertIn("__GLX_VENDOR_LIBRARY_NAME=mesa", read(gpu.NIRI_ENV))
+
+    def test_niri_as_usual_without_nvidia_or_in_nvidia_mux(self):
+        self.hybrid()
+        w(ARM + "/gpu_mux_mode/current_value", 0)            # MUX «только NVIDIA»
+        gpu.write_niri_env()
+        self.assertNotIn("ignore-drm-device", read(gpu.NIRI_KDL))
+        self.assertNotIn("mesa", read(gpu.NIRI_ENV))
+        rm(ARM + "/dgpu_disable")
+        gpu.write_niri_env()
+        self.assertNotIn("ignore-drm-device", read(gpu.NIRI_KDL))
+
+
+# ---------- оформление: тема noctalia в niri, KDE и GNOME — как прежде ----------
+class AppThemeTest(unittest.TestCase):
+    def setUp(self):
+        from asushelper.app import theme
+        self.theme = theme
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.file = os.path.join(self.tmp, "noctalia-colors.json")
+        patcher = mock.patch.object(theme, "NOCTALIA_COLORS", __import__("pathlib").Path(self.file))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        with open(os.path.join(os.path.dirname(__file__), "..", "data/noctalia/asus-helper-colors.json")) as f:
+            # шаблон, как его отрисует noctalia: каждое {{ … }} — цвет
+            import re
+            text = re.sub(r"\{\{ colors\.[a-z_]+\.default\.hex \}\}", "#123456", f.read())
+        with open(self.file, "w") as f:
+            f.write(text.replace("{{ mode }}", "light"))
+
+    def choose(self, desktop, settings=None):
+        with mock.patch.dict(os.environ, {"XDG_CURRENT_DESKTOP": desktop}), \
+             mock.patch.object(self.theme, "kde_style_available", return_value=desktop == "KDE"):
+            return self.theme.choose(settings or {})
+
+    def test_template_gives_every_color(self):
+        c = self.theme.noctalia_colors()
+        self.assertEqual(set(self.theme.ORIGINAL_COLORS) - set(c), set())
+        self.assertEqual(c["mode"], "light")
+
+    def test_niri_follows_noctalia(self):
+        self.assertEqual(self.choose("niri"), self.theme.NOCTALIA)
+        self.assertEqual(self.choose("niri", {"theme": "original"}), self.theme.ORIGINAL)
+        os.remove(self.file)                                  # шаблон ещё не отрисован — своя тема
+        self.assertEqual(self.choose("niri"), self.theme.ORIGINAL)
+
+    def test_kde_and_gnome_unchanged(self):
+        """Файл noctalia есть, но KDE остаётся в стиле KDE, а GNOME — в оригинальной теме."""
+        self.assertEqual(self.choose("KDE"), self.theme.SYSTEM)
+        self.assertEqual(self.choose("GNOME"), self.theme.ORIGINAL)
+        self.assertEqual(self.choose("ubuntu:GNOME"), self.theme.ORIGINAL)
+
+    def test_broken_file_falls_back(self):
+        with open(self.file, "w") as f:
+            f.write('{"window": "nope"}')
+        self.assertEqual(self.theme.noctalia_colors(), {})
+        self.assertEqual(self.choose("niri"), self.theme.ORIGINAL)
+
+
 # ---------- питание ----------
 class PowerSupplyTest(Base):
     def test_usb_c_charging_counts_as_ac(self):
@@ -559,6 +625,11 @@ class CleanupTest(Base):
         self.assertEqual(read(ARM + "/dgpu_disable/current_value"), "0")
 
 
+def svc_gpu():
+    from asushelper.daemon import service as svc
+    return svc.gpu
+
+
 class AutoSettleTest(Base):
     """«Авто» переключает не в момент подключения зарядки, а когда события питания закончились."""
 
@@ -585,6 +656,16 @@ class AutoSettleTest(Base):
         self.assertEqual(self.started, [])                 # не в ту же секунду
         run_loop(2300)   # timeout_add_seconds срабатывает с точностью до секунды
         self.assertEqual(self.started, [False])            # через паузу — включить NVIDIA
+
+    def test_new_login_retries_eco(self):
+        """На батарее Eco отказал (прежний рабочий стол держал NVIDIA) — после нового входа «Авто» пробует снова."""
+        w(ARM + "/dgpu_disable/current_value", 0)
+        self.s.session_started()
+        self.assertEqual(self.started, [])                 # не сразу: рабочий стол ещё запускается
+        with mock.patch.object(svc_gpu(), "user_programs", return_value=[]), \
+             mock.patch.object(svc_gpu(), "external_displays", return_value=[]):
+            run_loop(2300)
+        self.assertEqual(self.started, [True])
 
     def test_unplugged_again_during_pause(self):
         with mock.patch.object(self.s.modes, "power_source_changed",

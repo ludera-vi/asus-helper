@@ -77,6 +77,11 @@ def main() -> int:
     # подстраховка, если UPower не прислал сигнал
     GLib.timeout_add_seconds(10, lambda: on_upower() or True)
 
+    # ---------- вход в сеанс: новый рабочий стол уже не держит NVIDIA — «Авто» пробует снова ----------
+    bus.signal_subscribe("org.freedesktop.login1", "org.freedesktop.login1.Manager", "SessionNew",
+                         "/org/freedesktop/login1", None, Gio.DBusSignalFlags.NONE,
+                         lambda *_a: service.session_started())
+
     # ---------- выход из сна: BIOS забывает кривые и лимит заряда ----------
     # Блокировка сна «с задержкой»: logind ждёт, пока мы её отпустим (не дольше InhibitDelayMaxSec).
     # Перед сном убираем с шины выключенную NVIDIA — иначе выход из сна ждёт её 65 с.

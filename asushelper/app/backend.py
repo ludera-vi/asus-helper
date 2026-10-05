@@ -10,10 +10,11 @@ import os
 from pathlib import Path
 
 from gi.repository import Gio, GLib
-from PySide6.QtCore import Property, QObject, QProcess, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QFileSystemWatcher, QObject, QProcess, QTimer, Signal, Slot
 
 from .. import BUS_NAME, INTERFACE, OBJECT_PATH, i18n
 from . import display
+from . import theme as themes
 from ..i18n import _
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class Backend(QObject):
     activeChanged = Signal()
     screenAutoChanged = Signal()
     historyChanged = Signal()
+    colorsChanged = Signal()
     factoryCurves = Signal("QVariant")   # ответ на requestFactoryCurves
     message = Signal(str, bool)          # текст, ошибка ли
 
@@ -56,6 +58,9 @@ class Backend(QObject):
         self._last_ac = None
         self._history = {}
         self._translations = i18n.table()
+        self._colors = themes.colors_for(theme)
+        if theme == themes.NOCTALIA:
+            self._watch_noctalia()
         self._timer = QTimer(self, interval=POLL_MS, timeout=self.refresh)
         bus.signal_subscribe(BUS_NAME, INTERFACE, "StateChanged", OBJECT_PATH, None,
                              Gio.DBusSignalFlags.NONE, self._on_state_signal)
@@ -64,6 +69,25 @@ class Backend(QObject):
                              lambda *a: self.refresh(config=True))
         self.refresh(config=True)
         self.refreshDisplay()
+
+    # ---------- цвета темы noctalia: шаблон noctalia переписывает файл при смене темы ----------
+    def _watch_noctalia(self):
+        # следим и за папкой: файл могут заменить новым (переименованием), тогда слежение за ним пропадает
+        path = themes.NOCTALIA_COLORS
+        self._watcher = QFileSystemWatcher(self)
+        self._watcher.addPaths([str(path.parent), str(path)])
+        self._reload_timer = QTimer(self, singleShot=True, interval=200, timeout=self._reload_colors)
+        self._watcher.fileChanged.connect(lambda _p: self._reload_timer.start())
+        self._watcher.directoryChanged.connect(lambda _p: self._reload_timer.start())
+
+    def _reload_colors(self):
+        if str(themes.NOCTALIA_COLORS) not in self._watcher.files() and themes.NOCTALIA_COLORS.exists():
+            self._watcher.addPath(str(themes.NOCTALIA_COLORS))
+        colors = themes.noctalia_colors()
+        if colors and colors != self._colors:
+            self._colors = colors
+            log.info(_("тема noctalia: цвета обновлены (%s)"), colors["mode"])
+            self.colorsChanged.emit()
 
     # ---------- свойства для QML ----------
     def _get_state(self): return self._state
@@ -78,6 +102,8 @@ class Backend(QObject):
     def _get_translations(self): return self._translations
     def _get_theme(self): return self._theme
     def _get_theme_wanted(self): return self._settings.get("theme") or "system"
+    def _get_colors(self): return self._colors
+    def _get_can_choose_theme(self): return themes.can_choose()
     def _get_kde_style(self):
         from .theme import kde_style_available
         return kde_style_available()
@@ -108,6 +134,8 @@ class Backend(QObject):
     theme = Property(str, _get_theme, constant=True)
     themeWanted = Property(str, _get_theme_wanted, constant=True)
     kdeStyle = Property(bool, _get_kde_style, constant=True)
+    colors = Property("QVariant", _get_colors, notify=colorsChanged)
+    canChooseTheme = Property(bool, _get_can_choose_theme, constant=True)
     translations = Property("QVariant", _get_translations, constant=True)
 
     # ---------- D-Bus ----------

@@ -123,10 +123,20 @@ def test_profiles(s0, c0):
     ppd = bus.call_sync("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles", "org.freedesktop.DBus.Properties",
                         "Get", GLib.Variant("(ss)", ("net.hadess.PowerProfiles", "ActiveProfile")), None,
                         Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
-    gnome = "GNOME" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
-    check("GNOME видит режим" if gnome else "KDE видит режим",
+    desk = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+    gnome, kde = "GNOME" in desk, "KDE" in desk
+    check("GNOME видит режим" if gnome else "KDE видит режим" if kde else "рабочий стол (noctalia, waybar) видит режим",
           ppd == {"quiet": "power-saver", "balanced": "balanced", "performance": "performance"}[r], ppd)
-    if gnome:
+    if not gnome and not kde:
+        # noctalia и другие панели читают новое имя org.freedesktop.UPower.PowerProfiles
+        up = bus.call_sync("org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles",
+                           "org.freedesktop.DBus.Properties", "GetAll",
+                           GLib.Variant("(s)", ("org.freedesktop.UPower.PowerProfiles",)), None,
+                           Gio.DBusCallFlags.NONE, 5000, None).unpack()[0]
+        check("панель видит режим и все три режима (UPower.PowerProfiles)",
+              up["ActiveProfile"] == ppd and len(up["Profiles"]) == 3,
+              up["ActiveProfile"] + ": " + " ".join(p["Profile"] for p in up["Profiles"]))
+    elif gnome:
         # меню питания GNOME берёт список режимов из свойства Profiles
         profiles = bus.call_sync("net.hadess.PowerProfiles", "/net/hadess/PowerProfiles", "org.freedesktop.DBus.Properties",
                                  "Get", GLib.Variant("(ss)", ("net.hadess.PowerProfiles", "Profiles")), None,
@@ -341,6 +351,13 @@ def test_gpu(s0, c0):
         check(f"видеокарта → {mode}", good, g["error"] or g["state"])
         check(f"  окно сразу видит «переключаюсь» ({mode})", first is not None and first < 1.0,
               f"{first:.2f} с" if first is not None else "не пришло")
+        if mode == "standard":
+            # карта появилась заново: рабочий стол (niri, KWin, mutter) не должен снова её захватить, иначе
+            # следующий Eco откажет «рабочий стол на NVIDIA»
+            time.sleep(2)
+            from asushelper.daemon.gpu import is_desktop
+            held = [h for h in state()["gpu"].get("holders") or [] if is_desktop(h)]
+            check("  рабочий стол не захватил NVIDIA после включения", not held, ", ".join(held))
     time.sleep(3)
     check("окно выбора экрана не появлялось", osd_count() == osd_before)
     check("мониторов на NVIDIA нет (проверка Eco не мешает)", state()["gpu"].get("external") == [])

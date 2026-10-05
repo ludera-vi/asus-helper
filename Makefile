@@ -39,7 +39,10 @@ install:
 	sed 's|@BINDIR@|$(BINDIR)|' data/asus-helperd.service | install -Dm644 /dev/stdin "$(DESTDIR)$(UNITDIR)/asus-helperd.service"
 	install -Dm644 data/asus-helper-kwin.conf "$(DESTDIR)$(USERUNITDIR)/plasma-kwin_wayland.service.d/asus-helper.conf"
 	install -Dm644 data/asus-helper-gnome-shell.conf "$(DESTDIR)$(USERUNITDIR)/org.gnome.Shell@.service.d/asus-helper.conf"
+	install -Dm644 data/asus-helper-niri.conf "$(DESTDIR)$(USERUNITDIR)/niri.service.d/asus-helper.conf"
 	install -Dm644 data/asus-helper-gdm.conf "$(DESTDIR)$(UNITDIR)/gdm.service.d/asus-helper.conf"
+	install -Dm644 data/asus-helper-sddm.conf "$(DESTDIR)$(SYSCONFDIR)/sddm.conf.d/asus-helper.conf"
+	install -Dm644 data/asus-helper-sddm-xorg.conf "$(DESTDIR)$(SYSCONFDIR)/X11/asus-helper-sddm.conf"
 	install -Dm644 data/61-asus-helper-igpu.rules "$(DESTDIR)$(UDEVDIR)/61-asus-helper-igpu.rules"
 	install -Dm644 data/61-asus-helper-mutter.rules "$(DESTDIR)$(UDEVDIR)/61-asus-helper-mutter.rules"
 	install -Dm644 -t "$(DESTDIR)$(DATADIR)/gnome-shell/extensions/$(GNOMEEXT)" data/gnome-extension/metadata.json data/gnome-extension/extension.js
@@ -47,19 +50,23 @@ install:
 	install -Dm644 data/org.asushelper.policy "$(DESTDIR)$(POLKITDIR)/org.asushelper.policy"
 	install -Dm644 data/asus-helper.desktop "$(DESTDIR)$(DATADIR)/applications/asus-helper.desktop"
 	install -Dm644 data/asus-helper-autostart.desktop "$(DESTDIR)$(AUTOSTARTDIR)/asus-helper.desktop"
+	install -Dm644 data/noctalia/asus-helper-colors.json "$(DESTDIR)$(DATADIR)/asus-helper/noctalia-colors.json"
 	install -Dm644 data/icons/asus-helper.svg "$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/asus-helper.svg"
 	install -Dm644 README.md "$(DESTDIR)$(DATADIR)/doc/asus-helper/README.md"
 	install -Dm644 README.ru.md "$(DESTDIR)$(DATADIR)/doc/asus-helper/README.ru.md"
 
 uninstall:
-	rm -rf "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(DATADIR)/doc/asus-helper" \
+	rm -rf "$(DESTDIR)$(LIBDIR)" "$(DESTDIR)$(DATADIR)/doc/asus-helper" "$(DESTDIR)$(DATADIR)/asus-helper" \
 	       "$(DESTDIR)$(DATADIR)/gnome-shell/extensions/$(GNOMEEXT)"
 	for c in $(COMMANDS); do rm -f "$(DESTDIR)$(BINDIR)/$${c%%:*}"; done
 	rm -f "$(DESTDIR)$(BINDIR)/prime-run" \
 	      "$(DESTDIR)$(UNITDIR)/asus-helperd.service" \
 	      "$(DESTDIR)$(USERUNITDIR)/plasma-kwin_wayland.service.d/asus-helper.conf" \
 	      "$(DESTDIR)$(USERUNITDIR)/org.gnome.Shell@.service.d/asus-helper.conf" \
+	      "$(DESTDIR)$(USERUNITDIR)/niri.service.d/asus-helper.conf" \
 	      "$(DESTDIR)$(UNITDIR)/gdm.service.d/asus-helper.conf" \
+	      "$(DESTDIR)$(SYSCONFDIR)/sddm.conf.d/asus-helper.conf" \
+	      "$(DESTDIR)$(SYSCONFDIR)/X11/asus-helper-sddm.conf" \
 	      "$(DESTDIR)$(UDEVDIR)/61-asus-helper-igpu.rules" \
 	      "$(DESTDIR)$(UDEVDIR)/61-asus-helper-mutter.rules" \
 	      "$(DESTDIR)$(DBUSDIR)/org.asushelper.Daemon.conf" \
@@ -67,8 +74,8 @@ uninstall:
 	      "$(DESTDIR)$(DATADIR)/applications/asus-helper.desktop" \
 	      "$(DESTDIR)$(AUTOSTARTDIR)/asus-helper.desktop" \
 	      "$(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/asus-helper.svg"
-	-rmdir "$(DESTDIR)$(USERUNITDIR)/plasma-kwin_wayland.service.d" 2>/dev/null
-	-rmdir "$(DESTDIR)$(USERUNITDIR)/org.gnome.Shell@.service.d" "$(DESTDIR)$(UNITDIR)/gdm.service.d" 2>/dev/null
+	-rmdir "$(DESTDIR)$(USERUNITDIR)/plasma-kwin_wayland.service.d" "$(DESTDIR)$(USERUNITDIR)/niri.service.d" 2>/dev/null
+	-rmdir "$(DESTDIR)$(USERUNITDIR)/org.gnome.Shell@.service.d" "$(DESTDIR)$(UNITDIR)/gdm.service.d" "$(DESTDIR)$(SYSCONFDIR)/sddm.conf.d" 2>/dev/null
 
 test:
 	$(PYTHON) -m unittest discover -s tests -t .

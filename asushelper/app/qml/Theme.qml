@@ -12,6 +12,7 @@ Item {
     // Оформление: системное (цвета KDE) или оригинальное (своя тёмная тема) — задаёт окно
     property bool original: false
     property color card: "transparent"     // фон разделов-карточек в оригинальной теме
+    property var colors: ({})              // все цвета своей темы (оригинальной или noctalia) — для всплывающих окон
     // Мелкий шрифт подписей: в KDE — системный (Kirigami.Theme.smallFont), где система его не задаёт
     // (GNOME: он равен обычному) — на ступень меньше обычного. Задаёт окно (Main.qml)
     property font smallFont

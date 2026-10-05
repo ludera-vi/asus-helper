@@ -1,3 +1,7 @@
 # Asus-helper: постоянное имя /dev/dri/igpu для видеокарты, которая ведёт экран при загрузке
 # (на ноутбуках с гибридной графикой — встроенная Intel/AMD). Нужно рабочему столу KDE (см. asus-helper-kwin.conf).
 SUBSYSTEM=="drm", KERNEL=="card[0-9]*", ATTRS{boot_vga}=="1", SYMLINK+="dri/igpu"
+# /dev/dri/asus-helper-dgpu — NVIDIA (её card-узел). niri её не открывает, пока демон так решил (см. asus-helper-niri.conf);
+# имя то же и после Eco и включения, хотя номер узла ядро может дать другой. Именно card, а не renderD: после
+# включения ядро добавляет card раньше renderD, и niri, решая про card, должен уже видеть ссылку.
+SUBSYSTEM=="drm", KERNEL=="card[0-9]*", ATTRS{vendor}=="0x10de", SYMLINK+="dri/asus-helper-dgpu"

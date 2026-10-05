@@ -95,16 +95,33 @@ def panel_on_top() -> bool:
     return False
 
 
+def noctalia_bar_on_top() -> bool:
+    """niri с панелью noctalia: где её панель — position в разделе [bar…] настроек (по умолчанию сверху)."""
+    import tomllib
+    for path in (Path.home() / ".local/state/noctalia/settings.toml", Path.home() / ".config/noctalia/config.toml"):
+        try:
+            data = tomllib.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        # [bar], [bar.main] или [[bar]] — смотря какая версия noctalia
+        bars = data.get("bar") or {}
+        found = [*bars, *(v for b in bars for v in b.values())] if isinstance(bars, list) else [bars, *bars.values()]
+        for bar in (b for b in found if isinstance(b, dict)):
+            if isinstance(bar.get("position"), str):
+                return bar["position"] != "bottom"
+    return True
+
+
 def desktop() -> str:
     """Рабочий стол сеанса: kde, gnome или другое (niri, hyprland…) — в нижнем регистре."""
     d = os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
     return "kde" if "KDE" in d else "gnome" if "GNOME" in d else d.split(":")[0].lower()
 
 
-def use_breeze_icons(theme: str) -> None:
-    """Вне KDE (GNOME — Adwaita) нужных значков нет: берём Breeze, если он установлен. В оригинальной
-    (тёмной) теме — Breeze Dark, светлые значки на тёмном."""
-    name = "breeze" if theme == themes.SYSTEM else "breeze-dark"
+def use_breeze_icons(dark: bool) -> None:
+    """Вне KDE (GNOME — Adwaita) нужных значков нет: берём Breeze, если он установлен. На тёмном фоне
+    (оригинальная тема, тёмная тема noctalia) — Breeze Dark, светлые значки."""
+    name = "breeze-dark" if dark else "breeze"
     if any(os.path.exists(f"{d}/icons/{name}/index.theme")
            for d in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":")):
         QIcon.setThemeName(name)
@@ -210,23 +227,32 @@ def main() -> int:
     # оформление выбирается до загрузки окна: стиль QtQuick потом не сменить — только перезапуском
     theme = themes.choose(load_settings())
     QQuickStyle.setStyle(themes.style_for(theme))
-    if theme == themes.ORIGINAL:
+    colors = themes.colors_for(theme)
+    if theme != themes.SYSTEM:
         app.setStyle("Fusion")                       # и меню значка в трее — в той же теме
-        app.setPalette(themes.original_palette())
+        app.setPalette(themes.original_palette(colors))
     log.info(_("оформление: %s (%s)"), theme, QQuickStyle.name())
     session_desktop = desktop()
     if session_desktop != "kde":
-        use_breeze_icons(theme)
+        use_breeze_icons(theme != themes.SYSTEM and colors.get("mode") != "light")
 
     system = Gio.bus_get_sync(Gio.BusType.SYSTEM)
     backend = Backend(system, theme)
+    if theme == themes.NOCTALIA:
+        # сменилась тема noctalia — меню значка в трее берёт новую палитру (окно — из backend.colors само).
+        # Набор значков на ходу не меняем: уже показанные значки тогда пропадают, а символьные значки окна
+        # и так красятся цветом текста
+        backend.colorsChanged.connect(lambda: app.setPalette(themes.original_palette(backend.colors)))
     if not args.no_osd:
         app.agent = Agent(system, session)   # держим ссылку
 
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("backend", backend)
-    engine.rootContext().setContextProperty("originalColors", themes.ORIGINAL_COLORS)
-    engine.setInitialProperties({"anchorTop": panel_on_top(), "movable": session_desktop == "gnome"})
+    engine.setInitialProperties({"anchorTop": panel_on_top() if session_desktop == "kde" else noctalia_bar_on_top(),
+                                 "movable": session_desktop == "gnome",
+                                 # niri и другие с layer-shell (не KDE и не GNOME): окно встаёт под панель (её
+                                 # зону), а не поверх неё, и закрывается кликом мимо, а не потерей фокуса
+                                 "underPanels": session_desktop not in ("kde", "gnome")})
     engine.load(QUrl.fromLocalFile(str(Path(__file__).with_name("qml") / "Main.qml")))
     if not engine.rootObjects():
         log.error(_("окно не загрузилось (ошибки QML выше)"))
@@ -241,14 +267,15 @@ def main() -> int:
                             lambda *a: (tray.toggle(), a[-1].return_value(None)), None, None)
     Gio.bus_own_name_on_connection(session, APP_BUS_NAME, Gio.BusNameOwnerFlags.NONE, None, None)
 
-    # клавиша ROG (или назначенная в настройках KDE / GNOME) открывает окно
+    # клавиша ROG (или назначенная в настройках KDE / GNOME) открывает окно; в niri это строка в его
+    # конфиге (~/.config/niri/asus-helper.kdl от установщика) — второй запуск программы открывает окно
     if session_desktop == "gnome":
         from .hotkey import gnome_shortcut
         gnome_shortcut()
         if not QSystemTrayIcon.isSystemTrayAvailable():
             log.warning(_("в GNOME нет трея: нужно расширение AppIndicator (gnome-shell-extension-appindicator); "
                           "окно открывается из меню приложений и клавишей ROG"))
-    else:
+    elif session_desktop != "niri":
         from .hotkey import GlobalShortcut
         app.shortcut = GlobalShortcut(session, tray.toggle)
 

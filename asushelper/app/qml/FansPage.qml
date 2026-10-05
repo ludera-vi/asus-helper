@@ -39,6 +39,8 @@ ColumnLayout {
         Layout.fillWidth: true
         QQC2.ToolButton {
             icon.name: "go-previous"
+            // своя тема: значок цветом текста (без этого после смены светлой/тёмной темы noctalia он остаётся старым)
+            Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
             text: Theme.tr("Назад")
             display: QQC2.AbstractButton.IconOnly
             onClicked: page.back()
@@ -156,9 +158,10 @@ ColumnLayout {
 
             RowLayout {
                 Layout.fillWidth: true
-                QQC2.Button {
+                AppButton {
                     text: Theme.tr("Заводская")
                     icon.name: "edit-undo"
+                    Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                     enabled: page.isCurrent
                     onClicked: backend.requestFactoryCurves()
                     QQC2.ToolTip.visible: hovered
@@ -166,9 +169,10 @@ ColumnLayout {
                                                       : Theme.tr("BIOS отдаёт заводскую кривую только для включённого режима")
                 }
                 Item { Layout.fillWidth: true }
-                QQC2.Button {
+                AppButton {
                     text: Theme.tr("Применить")
                     icon.name: "dialog-ok-apply"
+                    Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                     highlighted: fanSection.dirty
                     enabled: fanSection.dirty && custom.checked
                     onClicked: {

@@ -1,4 +1,4 @@
-// Окно Asus-helper. В KDE на Wayland — всплывающая панель у трея (layer-shell): прикреплена к углу
+// Окно Asus-helper. В KDE и niri на Wayland — всплывающая панель у трея (layer-shell): прикреплена к углу
 // экрана со стороны панели, закрывается по Esc и по клику мимо. В других средах — обычное окно;
 // в GNOME (layer-shell там нет) его можно перетащить за шапку.
 import QtQuick
@@ -15,6 +15,9 @@ Window {
     property bool anchorTop: true
     // movable задаёт Python: окно без layer-shell (GNOME) — таскается за шапку
     property bool movable: false
+    // underPanels задаёт Python: niri и др. (не KDE и не GNOME) — панель (noctalia, waybar) тоже layer-shell,
+    // окно встаёт под неё; закрывается кликом мимо (catcher), а не потерей фокуса
+    property bool underPanels: false
     readonly property int edge: Kirigami.Units.smallSpacing * 2
 
     width: Kirigami.Units.gridUnit * 25
@@ -32,14 +35,37 @@ Window {
                                | LayerShell.Window.AnchorRight
     LayerShell.Window.margins: Qt.rect(0, edge, edge, edge)   // left, top, right, bottom
     LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityOnDemand
-    LayerShell.Window.exclusionZone: -1
+    LayerShell.Window.exclusionZone: underPanels ? 0 : -1
 
     onVisibleChanged: {
         backend.active = visible
+        if (!visible) catcher.visible = false
         if (visible) { requestActivate(); stack.pop(null) }
     }
-    // клик мимо окна — закрыть, как всплывающие окна Plasma
-    onActiveChanged: if (!active && visible && !keepOpen.running) visible = false
+    // клик мимо окна — закрыть, как всплывающие окна Plasma. Вне KDE (niri) по потере фокуса не закрываем: там
+    // часто «фокус за мышью», и окно закрывалось, стоило мыши чуть выйти за край. Клик мимо ловит catcher
+    onActiveChanged: if (!active && visible && !keepOpen.running && !underPanels) visible = false
+
+    // Вне KDE: прозрачный слой на весь экран под окном, пока оно открыто. Клик по нему (мимо окна) закрывает
+    // окно; мышь над ним не отдаёт фокус окнам под ним. Слой Top — всегда ниже окна (Overlay); поверх
+    // полноэкранной игры его не видно, там окно закрывают Esc, крестик и значок
+    Window {
+        id: catcher
+        visible: false
+        color: "transparent"
+        flags: Qt.FramelessWindowHint
+        LayerShell.Window.scope: "asus-helper-catcher"
+        LayerShell.Window.layer: LayerShell.Window.LayerTop
+        LayerShell.Window.anchors: LayerShell.Window.AnchorTop | LayerShell.Window.AnchorBottom
+                                   | LayerShell.Window.AnchorLeft | LayerShell.Window.AnchorRight
+        LayerShell.Window.keyboardInteractivity: LayerShell.Window.KeyboardInteractivityNone
+        LayerShell.Window.exclusionZone: -1
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onPressed: win.visible = false
+        }
+    }
 
     // после открытия окно ещё не получило фокус — не закрываем его сразу
     Timer { id: keepOpen; interval: 400 }
@@ -57,13 +83,15 @@ Window {
     function toggle() {
         if (visible) { visible = false; return }
         keepOpen.restart()
+        if (underPanels) catcher.visible = true
         visible = true
     }
 
     Binding { target: Theme; property: "lang"; value: backend.language }
     Binding { target: Theme; property: "dict"; value: backend.translations }
-    readonly property bool original: backend.theme === "original"
-    readonly property var oc: originalColors
+    // свои цвета (Fusion, карточки): оригинальная тема и тема noctalia (цвета меняются вместе с темой noctalia)
+    readonly property bool original: backend.theme !== "system"
+    readonly property var oc: backend.colors
     Binding { target: Theme; property: "original"; value: win.original }
     Binding {
         target: Theme; property: "smallFont"
@@ -73,29 +101,57 @@ Window {
                            pointSize: Math.round(Kirigami.Theme.defaultFont.pointSize * 0.82) })
     }
     Binding { target: Theme; property: "card"; value: win.oc.card; when: win.original }
+    Binding { target: Theme; property: "colors"; value: win.oc; when: win.original }
     Binding { target: Theme; property: "positive"; value: win.original ? win.oc.positive : Kirigami.Theme.positiveTextColor }
     Binding { target: Theme; property: "highlight"; value: win.original ? win.oc.accent : Kirigami.Theme.highlightColor }
     Binding { target: Theme; property: "negative"; value: win.original ? win.oc.negative : Kirigami.Theme.negativeTextColor }
     Binding { target: Theme; property: "neutral"; value: win.original ? win.oc.neutral : Kirigami.Theme.neutralTextColor }
 
-    // Оригинальная тема: свои цвета для всего, что рисует Kirigami (заголовки, сообщения, иконки, плитки)
-    Binding { target: frame.Kirigami.Theme; property: "backgroundColor"; value: win.oc.window; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "alternateBackgroundColor"; value: win.oc.card; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "textColor"; value: win.oc.text; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "disabledTextColor"; value: win.oc.disabled; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "highlightColor"; value: win.oc.accent; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "highlightedTextColor"; value: "#ffffff"; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "focusColor"; value: win.oc.accent; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "hoverColor"; value: win.oc.accent; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "linkColor"; value: win.oc.accent; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "activeTextColor"; value: win.oc.accent; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "positiveTextColor"; value: win.oc.positive; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "negativeTextColor"; value: win.oc.negative; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "neutralTextColor"; value: win.oc.neutral; when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "positiveBackgroundColor"; value: Qt.alpha(win.oc.positive, 0.2); when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "negativeBackgroundColor"; value: Qt.alpha(win.oc.negative, 0.2); when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "neutralBackgroundColor"; value: Qt.alpha(win.oc.neutral, 0.2); when: win.original }
-    Binding { target: frame.Kirigami.Theme; property: "activeBackgroundColor"; value: Qt.alpha(win.oc.accent, 0.2); when: win.original }
+    // Свои цвета и для элементов Qt Quick (кнопки, переключатели, ползунки, списки) — палитрой самого окна. Одной
+    // палитры приложения мало: при запуске Qt Quick берёт палитру платформенной темы (в niri часто
+    // QT_QPA_PLATFORMTHEME=gtk3 — белый текст и синие переключатели на светлой теме noctalia)
+    Binding { target: win.palette; property: "window"; value: win.oc.window; when: win.original }
+    Binding { target: win.palette; property: "windowText"; value: win.oc.text; when: win.original }
+    Binding { target: win.palette; property: "base"; value: win.oc.card; when: win.original }
+    Binding { target: win.palette; property: "alternateBase"; value: win.oc.button; when: win.original }
+    Binding { target: win.palette; property: "text"; value: win.oc.text; when: win.original }
+    Binding { target: win.palette; property: "button"; value: win.oc.button; when: win.original }
+    Binding { target: win.palette; property: "buttonText"; value: win.oc.text; when: win.original }
+    Binding { target: win.palette; property: "brightText"; value: win.oc.negative; when: win.original }
+    Binding { target: win.palette; property: "highlight"; value: win.oc.accent; when: win.original }
+    Binding { target: win.palette; property: "highlightedText"; value: win.oc.on_accent || "#ffffff"; when: win.original }
+    Binding { target: win.palette; property: "toolTipBase"; value: win.oc.card; when: win.original }
+    Binding { target: win.palette; property: "toolTipText"; value: win.oc.text; when: win.original }
+    Binding { target: win.palette; property: "placeholderText"; value: win.oc.dim; when: win.original }
+    Binding { target: win.palette; property: "link"; value: win.oc.accent; when: win.original }
+    Binding { target: win.palette; property: "accent"; value: win.oc.accent; when: win.original }
+    Binding { target: win.palette; property: "mid"; value: win.oc.border; when: win.original }
+    Binding { target: win.palette; property: "dark"; value: win.oc.window; when: win.original }
+    Binding { target: win.palette; property: "light"; value: win.oc.button; when: win.original }
+    Binding { target: win.palette; property: "midlight"; value: win.oc.button; when: win.original }
+    Binding { target: win.palette.disabled; property: "windowText"; value: win.oc.disabled; when: win.original }
+    Binding { target: win.palette.disabled; property: "text"; value: win.oc.disabled; when: win.original }
+    Binding { target: win.palette.disabled; property: "buttonText"; value: win.oc.disabled; when: win.original }
+
+    // Оригинальная тема: свои цвета для всего, что рисует Kirigami. На корне окна, а не на рамке: всплывающие
+    // окна (слой Overlay) — тоже его дети, иначе в них были бы цвета платформенной темы (заголовки, сообщения, иконки, плитки)
+    Binding { target: win.contentItem.Kirigami.Theme; property: "backgroundColor"; value: win.oc.window; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "alternateBackgroundColor"; value: win.oc.card; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "textColor"; value: win.oc.text; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "disabledTextColor"; value: win.oc.disabled; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "highlightColor"; value: win.oc.accent; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "highlightedTextColor"; value: "#ffffff"; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "focusColor"; value: win.oc.accent; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "hoverColor"; value: win.oc.accent; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "linkColor"; value: win.oc.accent; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "activeTextColor"; value: win.oc.accent; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "positiveTextColor"; value: win.oc.positive; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "negativeTextColor"; value: win.oc.negative; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "neutralTextColor"; value: win.oc.neutral; when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "positiveBackgroundColor"; value: Qt.alpha(win.oc.positive, 0.2); when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "negativeBackgroundColor"; value: Qt.alpha(win.oc.negative, 0.2); when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "neutralBackgroundColor"; value: Qt.alpha(win.oc.neutral, 0.2); when: win.original }
+    Binding { target: win.contentItem.Kirigami.Theme; property: "activeBackgroundColor"; value: Qt.alpha(win.oc.accent, 0.2); when: win.original }
 
     Shortcut { sequence: "Escape"; onActivated: stack.depth > 1 ? stack.pop() : (win.visible = false) }
 
@@ -144,6 +200,8 @@ Window {
                 Item { Layout.fillWidth: true }
                 QQC2.ToolButton {
                     icon.name: "office-chart-line-forecast-symbolic"
+                    // своя тема: значок цветом текста (без этого после смены светлой/тёмной темы noctalia он остаётся старым)
+                    Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                     text: Theme.tr("Графики")
                     display: QQC2.AbstractButton.TextBesideIcon
                     visible: stack.depth === 1
@@ -154,6 +212,7 @@ Window {
                 }
                 QQC2.ToolButton {
                     icon.name: "window-close-symbolic"
+                    Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                     text: Theme.tr("Закрыть окно")
                     display: QQC2.AbstractButton.IconOnly
                     onClicked: win.visible = false

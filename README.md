@@ -11,9 +11,11 @@ no pile of separate tools. English and Russian interface.
 > **Works well on:** **KDE Plasma 6** and **GNOME** on **Arch Linux and derivatives**
 > (CachyOS, EndeavourOS, Manjaro, Garuda).
 >
-> **Still in development:** 🛠 other desktops (Hyprland, niri, Sway, COSMIC…) and other distributions
+> **New, being tested:** 🧪 **niri** (with a bar that has a tray, e.g. noctalia).
+>
+> **Still in development:** 🛠 other desktops (Hyprland, Sway, COSMIC…) and other distributions
 > (Fedora, openSUSE, Ubuntu). The daemon and `asus-helper-cli` already work on any system with systemd;
-> the window and tray icon are polished for KDE and GNOME so far.
+> the window and tray icon are polished for KDE, GNOME and niri so far.
 
 Asus-helper replaces `asusctl` / `asusd`, `rog-control-center`, `supergfxctl` and `power-profiles-daemon` —
 no need to install them separately.
@@ -29,7 +31,7 @@ no need to install them separately.
 |  **Keyboard** | brightness (the keys show a pop-up too), Aura effects, color and speed, turns off when you're not typing, when to light up (at boot, in sleep…) |
 | **Lid (Slash)** | brightness, 15 animations, static light, battery level; whether to light up on battery and with the lid closed |
 | **Battery** | charge limit (e.g. 80 % for a long battery life), charts of temperature, fans and drain, charge over 24 h, battery health by day |
-| **Appearance** | in KDE — *system* (KDE colors and style) or *original* — our own dark theme in the spirit of G-Helper; in GNOME and other desktops — original |
+| **Appearance** | in KDE — *system* (KDE colors and style) or *original* — our own dark theme in the spirit of G-Helper; in niri with noctalia — *system* follows the noctalia theme (palette, light/dark) live, or original; in GNOME and other desktops — original |
 | **Little things** | the ROG key above the keyboard opens the window; tray icon: color — profile, purple dot — NVIDIA is working |
 
 **No model lists.** Asus-helper finds out what your particular laptop can do (from the kernel and its
@@ -76,6 +78,14 @@ installer offers to log out right away.
 a small Asus-helper extension (profile and lighting pop-ups, the window opens under the tray). They start
 working after that one new login.
 
+**On niri** the installer adds two `include optional=true` lines to the end of `~/.config/niri/config.kdl`
+(a backup is kept next to it): `asus-helper.kdl` — the ROG key bind, yours to edit, and
+`/run/asus-helper/niri.kdl` — written by the daemon, it tells niri not to open NVIDIA. Programs started
+from niri run on the integrated GPU; for NVIDIA use `prime-run`. The icon lives in the bar tray (noctalia,
+waybar with the tray module), the window opens next to it under the bar. With noctalia the window takes
+its theme colors: the installer adds a noctalia template (`~/.config/noctalia/asus-helper.toml`), and the
+window repaints itself whenever you change the noctalia color scheme, wallpaper colors or light/dark mode.
+
 An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AUR registration reopens.
 
 ## Usage
@@ -84,8 +94,9 @@ An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AU
   profile (Quiet green, Balanced blue, Turbo red), a purple dot — NVIDIA is working.
 - **The ROG key** above the keyboard opens the window. No such key? Assign any:
   KDE — *System Settings → Shortcuts → "Open Asus-helper"*,
-  GNOME — *Settings → Keyboard → Custom Shortcuts → "Open Asus-helper"*.
-- **Language** — the RU / EN switch at the bottom of the window. **Appearance** (KDE) — next to it: "System" or "Original".
+  GNOME — *Settings → Keyboard → Custom Shortcuts → "Open Asus-helper"*,
+  niri — the `binds` in `~/.config/niri/asus-helper.kdl`.
+- **Language** — the RU / EN switch at the bottom of the window. **Appearance** (KDE, niri with noctalia) — next to it: "System" or "Original".
 - **Games on NVIDIA**: in Standard programs use NVIDIA by themselves; for old OpenGL games —
   `prime-run program` (in Steam: launch options `prime-run %command%`).
 - **Terminal**: `asus-helper-cli` — status, `asus-helper-cli --help` — all commands.
@@ -106,6 +117,9 @@ packages it installed. `./uninstall.sh --keep-config` — uninstall but keep the
 - **No icon on GNOME** — log out and back in (GNOME loads extensions at login). Make sure the AppIndicator
   extension is on: *Extensions → AppIndicator and KStatusNotifierItem Support*.
 - **Eco says the desktop runs on NVIDIA** — one log out and back in is needed (see above).
+- **Eco says Xorg holds NVIDIA** (SDDM login screen on X11) — one reboot is needed: the login screen keeps
+  running in the background and the installer's setting (`/etc/sddm.conf.d/asus-helper.conf`) applies to it
+  from the next start.
 - **"The NVIDIA driver hung, a reboot is needed"** — this occasionally happens with the NVIDIA driver if it
   is switched at an unlucky moment. Asus-helper notices it and doesn't hang along with it — just reboot.
 - **The daemon doesn't start** — most likely `asusd` (from `asusctl`) is running: two daemons would fight
@@ -122,7 +136,7 @@ asus-helperd (root, systemd)   — the only one writing to sysfs and HID; D-Bus 
   │   G-Helper) → unload the driver if possible; every kernel step has a time limit
   ├─ Aura and Slash over HID (protocols from G-Helper), charge limit, sensor history
   └─ answers the desktop in place of power-profiles-daemon (battery widget, Fn+F5)
-asus-helper (Qt/QML, session)  — tray icon, window next to the tray, KDE / GNOME pop-ups, refresh rate
+asus-helper (Qt/QML, session)  — tray icon, window next to the tray, KDE / GNOME / noctalia pop-ups, refresh rate
 asus-helper-cli                — the same from a terminal
 ```
 
@@ -131,8 +145,8 @@ Permissions go through polkit: whoever sits at the laptop needs no password. Dae
 
 To turn NVIDIA off without logging out, the desktop runs on the integrated GPU: at boot the daemon decides
 whether that is safe (NVIDIA present, MUX in hybrid mode) and only then writes a setting for KWin
-(`/run/asus-helper/kwin.env`) or for GNOME and the GDM login screen (`/run/asus-helper/gnome.env` and a udev
-rule). Without NVIDIA, with MUX in "NVIDIA only" mode or without the daemon nothing changes.
+(`/run/asus-helper/kwin.env`), for GNOME and the GDM login screen (`/run/asus-helper/gnome.env` and a udev
+rule) or for niri (`/run/asus-helper/niri.kdl` with `debug { ignore-drm-device }` and `niri.env`). Without NVIDIA, with MUX in "NVIDIA only" mode or without the daemon nothing changes.
 
 ## For developers
 

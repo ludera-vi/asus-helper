@@ -230,6 +230,7 @@ class Service:
     def startup(self) -> None:
         gpu.write_kwin_env()
         gpu.write_gnome_env()
+        gpu.write_niri_env()
         if gpu.supported():
             gpu.fixup()
         self.apply_keyboard()
@@ -261,6 +262,11 @@ class Service:
         self.modes.reapply(_("выход из сна"))
         self._auto_eco_later()
 
+    def session_started(self) -> None:
+        """Кто-то вошёл в сеанс. «Авто» могло отказать, пока прежний рабочий стол держал NVIDIA (до выхода из
+        сеанса, сразу после установки) — новый вход повод попробовать ещё раз."""
+        self._auto_eco_later()
+
     def power_source_changed(self, ac: bool) -> None:
         if ac == self.modes.ac:
             return
@@ -286,7 +292,8 @@ class Service:
 
     # После подключения зарядки, выхода из сна и загрузки BIOS несколько секунд рассылает события ACPI о
     # питании, и драйвер NVIDIA их обрабатывает. Переключать в этот момент — риск зависания в ядре, поэтому
-    # «Авто» ждёт. Попытка одна: не получилось — ошибка в окне, следующая — при следующей смене питания.
+    # «Авто» ждёт. Попытка одна: не получилось — ошибка в окне, следующая — при следующей смене питания,
+    # выходе из сна или входе в сеанс.
     AUTO_SETTLE_S = 10
 
     def _auto_eco_later(self) -> None:

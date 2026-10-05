@@ -1,6 +1,7 @@
 """asus-helper-agent — помощник в сеансе пользователя (замена asus-osd).
 
-Слушает демон на системной шине и показывает карточки KDE (в GNOME — через расширение Asus-helper):
+Слушает демон на системной шине и показывает карточки KDE (в GNOME — через расширение Asus-helper,
+в niri и других — карточка подсветки noctalia и короткие уведомления):
   • смена режима (Fn+F5, автоматика сеть/батарея, приложение) — карточка режима;
   • яркость подсветки клавишами — карточка подсветки;
   • видеокарта переключилась или не смогла — уведомление;
@@ -28,6 +29,7 @@ GNOME_ICONS = {"quiet": "power-profile-power-saver-symbolic", "balanced": "power
                "performance": "power-profile-performance-symbolic"}
 PROFILE_NAMES = {"quiet": _("Тихий"), "balanced": _("Баланс"), "performance": _("Турбо")}
 GNOME = "GNOME" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
+KDE = "KDE" in os.environ.get("XDG_CURRENT_DESKTOP", "").upper()
 GPU_TEXT = {"off": _("NVIDIA выключена (Eco)"), "suspended": _("NVIDIA включена"), "active": _("NVIDIA включена")}
 
 
@@ -37,6 +39,7 @@ class Agent:
         self.session = session
         self.profile = None
         self.notification_id = 0
+        self.osd_id = 0             # уведомление вместо карточки (не KDE и не GNOME) — новое заменяет прошлое
         self.ask_id = 0             # открытое уведомление «закрыть программы или подождать»
         for signal, handler in (("StateChanged", self.on_state), ("KeyboardBrightnessChanged", self.on_brightness),
                                 ("GpuSwitchFinished", self.on_gpu), ("GpuAutoAsk", self.on_auto_ask)):
@@ -59,6 +62,41 @@ class Agent:
         self.session.call("org.asushelper.Shell", "/org/asushelper/Shell", "org.asushelper.Shell", "ShowOSD",
                           GLib.Variant("(ssd)", (icon, label, level)), None, Gio.DBusCallFlags.NO_AUTO_START,
                           -1, None, None, None)
+
+    def notify_osd(self, icon: str, label: str, level: float = -1) -> None:
+        """Вместо карточки (niri, Hyprland…): короткое уведомление, которое не остаётся в истории; level — полоска."""
+        hints = {"transient": GLib.Variant("b", True), "urgency": GLib.Variant("y", 0),
+                 "x-canonical-private-synchronous": GLib.Variant("s", "asus-helper-osd")}
+        if level >= 0:
+            hints["value"] = GLib.Variant("i", round(level * 100))
+
+        def done(conn, res):
+            try:
+                self.osd_id = conn.call_finish(res).unpack()[0]
+            except GLib.Error as e:
+                log.warning(_("уведомление: %s"), e.message)
+        self.session.call("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                          "org.freedesktop.Notifications", "Notify",
+                          GLib.Variant("(susssasa{sv}i)", ("Asus-helper", self.osd_id, icon, label, "", [], hints, 2000)),
+                          None, Gio.DBusCallFlags.NONE, -1, None, done)
+
+    def noctalia_osd(self, args: list[str], fallback) -> None:
+        """Карточка панели noctalia (niri): noctalia msg …; нет noctalia или не ответила — fallback()."""
+        try:
+            proc = Gio.Subprocess.new(["noctalia", "msg", *args],
+                                      Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
+        except GLib.Error:
+            fallback()
+            return
+
+        def done(p, res):
+            try:
+                ok = p.wait_check_finish(res)
+            except GLib.Error:
+                ok = False
+            if not ok:
+                fallback()
+        proc.wait_check_async(None, done)
 
     def osd(self, method: str, sig: str, value) -> None:
         self.session.call("org.kde.plasmashell", "/org/kde/osdService", "org.kde.osdService", method,
@@ -84,10 +122,13 @@ class Agent:
         profile = state.get("profile")
         if profile and profile != self.profile:
             if self.profile is not None:
+                icon, name = GNOME_ICONS.get(profile, GNOME_ICONS["balanced"]), PROFILE_NAMES.get(profile, profile)
                 if GNOME:
-                    self.gnome_osd(GNOME_ICONS.get(profile, GNOME_ICONS["balanced"]), PROFILE_NAMES.get(profile, profile))
-                else:
+                    self.gnome_osd(icon, name)
+                elif KDE:
                     self.osd("powerProfileChanged", "s", PPD_NAMES.get(profile, "balanced"))
+                else:
+                    self.notify_osd(icon, _("Режим: {0}").format(name))
             self.profile = profile
         # вопрос больше не актуален (подключили зарядку, программы закрыли, выбрали режим вручную)
         if self.ask_id and not (state.get("gpu") or {}).get("auto_waiting"):
@@ -97,8 +138,12 @@ class Agent:
         level, top = args[5].unpack()
         if GNOME:
             self.gnome_osd("keyboard-brightness-symbolic", _("Подсветка клавиатуры"), level / (top or 1))
-        else:
+        elif KDE:
             self.osd("keyboardBrightnessChanged", "i", round(level * 100 / (top or 1)))
+        else:
+            self.noctalia_osd(["keyboard-backlight-osd", str(round(level * 100 / (top or 1)))],
+                              lambda: self.notify_osd("keyboard-brightness-symbolic", _("Подсветка клавиатуры"),
+                                                      level / (top or 1)))
 
     def on_gpu(self, *args):
         state, error = args[5].unpack()

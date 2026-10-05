@@ -166,6 +166,8 @@ ColumnLayout {
                 Kirigami.Action {
                     text: Theme.tr("Закрыть и выключить")
                     icon.name: "process-stop-symbolic"
+                    // своя тема: значок цветом текста (без этого после смены светлой/тёмной темы noctalia он остаётся старым)
+                    Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                     onTriggered: backend.answerGpuAuto("close")
                 },
                 Kirigami.Action {
@@ -173,6 +175,7 @@ ColumnLayout {
                     visible: !!page.gpu.waiting_manual
                     text: Theme.tr("Отмена")
                     icon.name: "dialog-cancel-symbolic"
+                    Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                     onTriggered: backend.answerGpuAuto("cancel")
                 }
             ]
@@ -256,14 +259,14 @@ ColumnLayout {
         RowLayout {
             visible: !!page.kbd.rgb
             spacing: Kirigami.Units.smallSpacing
-            QQC2.ComboBox {
+            AppComboBox {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 model: Theme.auraModes.map(m => m.name)
                 currentIndex: Math.max(0, Theme.auraModes.findIndex(m => m.id === page.kbd.mode))
                 onActivated: i => backend.setAura(Theme.auraModes[i].id, page.kbd.color, page.kbd.color2, page.kbd.speed)
             }
-            QQC2.Button {
+            AppButton {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 enabled: page.kbd.mode !== "cycle"
@@ -282,11 +285,12 @@ ColumnLayout {
                     Item { Layout.fillWidth: true }
                 }
             }
-            QQC2.Button {
+            AppButton {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 text: Theme.tr("Ещё")
                 icon.name: "settings-configure-symbolic"
+                Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                 onClicked: extraPopup.open()
             }
         }
@@ -315,18 +319,19 @@ ColumnLayout {
         }
         RowLayout {
             spacing: Kirigami.Units.smallSpacing
-            QQC2.ComboBox {
+            AppComboBox {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 2
                 model: (page.sl.modes || []).map(m => m.name)
                 currentIndex: Math.max(0, (page.sl.modes || []).findIndex(m => m.id === page.sl.mode))
                 onActivated: i => backend.setSlash(page.sl.modes[i].id, Math.max(1, page.sl.brightness), page.sl.interval)
             }
-            QQC2.Button {
+            AppButton {
                 Layout.fillWidth: true
                 Layout.preferredWidth: 1
                 text: Theme.tr("Ещё")
                 icon.name: "settings-configure-symbolic"
+                Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                 onClicked: slashPopup.open()
             }
         }
@@ -371,11 +376,12 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         Item { Layout.fillWidth: true }
-        // оформление: как в системе (KDE) или оригинальное — как язык: выбранное в рамке и не нажимается, другое
-        // переключает (окно перезапустится). Выбор есть только в KDE со стилем KDE; в GNOME и других средах
-        // окно всегда в оригинальной теме — кнопок нет
+        // оформление: как в системе (KDE или тема noctalia в niri) или оригинальное — как язык: выбранное в рамке
+        // и не нажимается, другое переключает (окно перезапустится). Выбор есть в KDE со стилем KDE и в niri с
+        // noctalia; в GNOME и других средах окно всегда в оригинальной теме — кнопок нет
         Repeater {
-            model: backend.kdeStyle ? [{ id: "system", name: Theme.tr("Система"), hint: Theme.tr("Как в системе (KDE)") },
+            model: backend.canChooseTheme ? [{ id: "system", name: Theme.tr("Система"),
+                                               hint: backend.kdeStyle ? Theme.tr("Как в системе (KDE)") : Theme.tr("Как в noctalia") },
                                        { id: "original", name: Theme.tr("Оригинал"), hint: Theme.tr("Оригинальное (тёмное)") }]
                                     : []
             QQC2.ToolButton {
@@ -437,8 +443,9 @@ ColumnLayout {
     }
 
     // ---------- предупреждение: монитор на NVIDIA ----------
-    QQC2.Popup {
+    AppPopup {
         id: displayWarning
+        objectName: "displayWarning"
         parent: QQC2.Overlay.overlay
         anchors.centerIn: parent
         width: Math.min(parent.width - Kirigami.Units.gridUnit * 2, Kirigami.Units.gridUnit * 20)
@@ -448,7 +455,13 @@ ColumnLayout {
             spacing: Kirigami.Units.largeSpacing
             RowLayout {
                 Kirigami.Icon { source: "dialog-warning"; implicitWidth: Kirigami.Units.iconSizes.medium; implicitHeight: implicitWidth }
-                Kirigami.Heading { level: 4; text: Theme.tr("Подключён внешний монитор"); Layout.fillWidth: true; wrapMode: Text.Wrap }
+                Kirigami.Heading {
+                    level: 4
+                    text: Theme.tr("Подключён внешний монитор")
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    Binding on font.weight { value: Font.DemiBold; when: Theme.original }
+                }
             }
             QQC2.Label {
                 Layout.fillWidth: true
@@ -458,10 +471,11 @@ ColumnLayout {
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
-                QQC2.Button { text: Theme.tr("Отмена"); onClicked: displayWarning.close() }
-                QQC2.Button {
+                AppButton { text: Theme.tr("Отмена"); onClicked: displayWarning.close() }
+                AppButton {
                     text: Theme.tr("Всё равно выключить")
                     icon.name: "battery-profile-powersave-symbolic"
+                    Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                     onClicked: { displayWarning.close(); backend.setGpuModeFlags("eco", 2) }
                 }
             }
@@ -469,15 +483,20 @@ ColumnLayout {
     }
 
     // ---------- всплывающее: цвет ----------
-    QQC2.Popup {
+    AppPopup {
         id: colorPopup
+        objectName: "colorPopup"
         parent: QQC2.Overlay.overlay
         anchors.centerIn: parent
         modal: true
         padding: Kirigami.Units.largeSpacing * 1.5
         contentItem: ColumnLayout {
             spacing: Kirigami.Units.largeSpacing
-            Kirigami.Heading { level: 4; text: Theme.tr("Цвет подсветки") }
+            Kirigami.Heading {
+                level: 4
+                text: Theme.tr("Цвет подсветки")
+                Binding on font.weight { value: Font.DemiBold; when: Theme.original }
+            }
             GridLayout {
                 columns: 5
                 columnSpacing: Kirigami.Units.largeSpacing
@@ -492,10 +511,11 @@ ColumnLayout {
                     }
                 }
             }
-            QQC2.Button {
+            AppButton {
                 Layout.fillWidth: true
                 text: Theme.tr("Свой цвет…")
                 icon.name: "color-picker-symbolic"
+                Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
                 onClicked: { colorPopup.close(); colorDialog.selectedColor = page.kbd.color; colorDialog.open() }
             }
         }
@@ -509,8 +529,9 @@ ColumnLayout {
     }
 
     // ---------- всплывающее: ещё про Slash ----------
-    QQC2.Popup {
+    AppPopup {
         id: slashPopup
+        objectName: "slashPopup"
         parent: QQC2.Overlay.overlay
         anchors.centerIn: parent
         width: Math.min(parent.width - Kirigami.Units.gridUnit * 2, Kirigami.Units.gridUnit * 20)
@@ -518,7 +539,11 @@ ColumnLayout {
         padding: Kirigami.Units.largeSpacing * 1.5
         contentItem: ColumnLayout {
             spacing: Kirigami.Units.largeSpacing
-            Kirigami.Heading { level: 4; text: Theme.tr("Подсветка крышки") }
+            Kirigami.Heading {
+                level: 4
+                text: Theme.tr("Подсветка крышки")
+                Binding on font.weight { value: Font.DemiBold; when: Theme.original }
+            }
             RowLayout {
                 QQC2.Label { text: Theme.tr("Пауза между повторами"); Layout.fillWidth: true }
                 QQC2.Label { text: intervalSlider.value + Theme.tr(" с"); font.weight: Font.DemiBold }
@@ -541,7 +566,7 @@ ColumnLayout {
                 checked: !!page.sl.lid_closed
                 onToggled: backend.setSlashOptions(!!page.sl.on_battery, checked)
             }
-            QQC2.Button {
+            AppButton {
                 Layout.alignment: Qt.AlignRight
                 text: Theme.tr("Готово")
                 onClicked: slashPopup.close()
@@ -550,8 +575,9 @@ ColumnLayout {
     }
 
     // ---------- всплывающее: ещё про подсветку ----------
-    QQC2.Popup {
+    AppPopup {
         id: extraPopup
+        objectName: "extraPopup"
         parent: QQC2.Overlay.overlay
         anchors.centerIn: parent
         width: Math.min(parent.width - Kirigami.Units.gridUnit * 2, Kirigami.Units.gridUnit * 20)
@@ -559,7 +585,11 @@ ColumnLayout {
         padding: Kirigami.Units.largeSpacing * 1.5
         contentItem: ColumnLayout {
             spacing: Kirigami.Units.largeSpacing
-            Kirigami.Heading { level: 4; text: Theme.tr("Подсветка клавиатуры") }
+            Kirigami.Heading {
+                level: 4
+                text: Theme.tr("Подсветка клавиатуры")
+                Binding on font.weight { value: Font.DemiBold; when: Theme.original }
+            }
 
             QQC2.Label { text: Theme.tr("Скорость эффекта"); opacity: 0.8; visible: page.kbd.mode !== "static" }
             RowLayout {
@@ -586,14 +616,14 @@ ColumnLayout {
                 readonly property var names: [Theme.tr("никогда"), Theme.tr("через 15 с"), Theme.tr("через 30 с"), Theme.tr("через 1 мин"), Theme.tr("через 2 мин"), Theme.tr("через 5 мин"), Theme.tr("через 10 мин")]
                 function index(v) { const i = values.indexOf(v || 0); return i < 0 ? 0 : i }
                 QQC2.Label { text: Theme.tr("От сети") }
-                QQC2.ComboBox {
+                AppComboBox {
                     Layout.fillWidth: true
                     model: timeouts.names
                     currentIndex: timeouts.index(page.kbd.timeout_ac)
                     onActivated: i => backend.setKeyboardTimeout(timeouts.values[i], page.kbd.timeout_battery || 0)
                 }
                 QQC2.Label { text: Theme.tr("От батареи") }
-                QQC2.ComboBox {
+                AppComboBox {
                     Layout.fillWidth: true
                     model: timeouts.names
                     currentIndex: timeouts.index(page.kbd.timeout_battery)
@@ -621,7 +651,7 @@ ColumnLayout {
                     }
                 }
             }
-            QQC2.Button {
+            AppButton {
                 Layout.alignment: Qt.AlignRight
                 text: Theme.tr("Готово")
                 onClicked: extraPopup.close()

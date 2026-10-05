@@ -36,6 +36,8 @@ ColumnLayout {
         Layout.fillWidth: true
         QQC2.ToolButton {
             icon.name: "go-previous"
+            // своя тема: значок цветом текста (без этого после смены светлой/тёмной темы noctalia он остаётся старым)
+            Binding on icon.color { value: Kirigami.Theme.textColor; when: Theme.original }
             text: Theme.tr("Назад")
             display: QQC2.AbstractButton.IconOnly
             onClicked: page.back()

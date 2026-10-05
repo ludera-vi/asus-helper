@@ -81,6 +81,28 @@ if src and src.lookup(schema, True):
             entry.reset(k)
         Gio.Settings.sync()
 PY
+# клавиша окна и настройка видеокарты в конфиге niri: строки, которые добавил установщик, и свой файл
+NIRI_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/niri"
+if [ -f "$NIRI_DIR/config.kdl" ] && grep -q '^// Asus-helper' "$NIRI_DIR/config.kdl"; then
+    python3 - "$NIRI_DIR/config.kdl" <<'PY'
+import sys
+path = sys.argv[1]
+ours = ('include optional=true "asus-helper.kdl"', 'include optional=true "/run/asus-helper/niri.kdl"')
+lines = open(path).read().split("\n")
+out = [l for l in lines if not (l.startswith("// Asus-helper") or l.strip() in ours)]
+while len(out) > 1 and out[-1] == "" and out[-2] == "":
+    out.pop()
+open(path, "w").write("\n".join(out))
+PY
+    command -v niri >/dev/null && niri msg action load-config-file >/dev/null 2>&1
+fi
+rm -f "$NIRI_DIR/asus-helper.kdl" "$NIRI_DIR/config.kdl.asus-helper.bak"
+# шаблон noctalia, который красит окно в цвета её темы
+NOCTALIA_TOML="${XDG_CONFIG_HOME:-$HOME/.config}/noctalia/asus-helper.toml"
+if [ -f "$NOCTALIA_TOML" ]; then
+    rm -f "$NOCTALIA_TOML" "${XDG_CONFIG_HOME:-$HOME/.config}/asus-helper/noctalia-colors.json"
+    command -v noctalia >/dev/null && noctalia msg config-reload >/dev/null 2>&1
+fi
 rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/asus-helper"
 ok "$(L "Значок, ярлыки и клавиша окна убраны" "Tray icon, launchers and window key removed")"
 

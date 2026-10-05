@@ -778,6 +778,41 @@ def write_gnome_env() -> None:
         log.info(_("рабочий стол GNOME: %s"), _("только встроенная видеокарта") if on else _("как обычно (все видеокарты)"))
 
 
+# niri тоже открывает все видеокарты: через NVIDIA выводит её мониторы и держит для этого card*. Видеокарту из
+# «debug { ignore-drm-device }» niri не открывает; NIRI_DGPU — ссылка от правила udev 61-asus-helper-igpu.rules,
+# niri разрешает её заново при каждом появлении карты, поэтому после Eco и включения она не теряется (ссылка —
+# на card-узел: он появляется первым, render-узел — следом).
+# Установщик подключает NIRI_KDL в конфиг niri строкой «include optional=true» — нет файла, niri работает
+# как обычно. Окружение niri (и того, что он запускает: Xwayland, панель, программы) — NIRI_ENV
+# (drop-in для niri.service): без него OpenGL перебирает видеокарты и открывает /dev/nvidia*.
+NIRI_KDL = "/run/asus-helper/niri.kdl"
+NIRI_ENV = "/run/asus-helper/niri.env"
+NIRI_DGPU = "/dev/dri/asus-helper-dgpu"
+
+
+def niri_kdl() -> str:
+    if not igpu_only():
+        return ""
+    return f'debug {{\n    ignore-drm-device "{NIRI_DGPU}"\n}}\n'
+
+
+def write_niri_env() -> None:
+    on = igpu_only()
+    try:
+        os.makedirs(os.path.dirname(sysfs.path(NIRI_KDL)), exist_ok=True)
+        with open(sysfs.path(NIRI_KDL), "w") as f:
+            f.write(_("// Asus-helper: niri только на встроенной видеокарте (см. gpu.py)\n"))
+            f.write(niri_kdl())
+        with open(sysfs.path(NIRI_ENV), "w") as f:
+            f.write(_("# Asus-helper: niri только на встроенной видеокарте (см. gpu.py)\n"))
+            f.write("".join(l + "\n" for l in (MESA_ONLY if on else [])))
+    except OSError as e:
+        log.warning(_("не записать %s: %s"), NIRI_KDL, e)
+        return
+    if os.path.exists("/usr/bin/niri"):
+        log.info(_("рабочий стол niri: %s"), _("только встроенная видеокарта") if on else _("как обычно (все видеокарты)"))
+
+
 def desktop_on_screen(gpu: str | None = None) -> list[str]:
     """Рабочий стол или экран входа вывел изображение через NVIDIA (держит её card*). Снимать карту с шины
     тогда нельзя: ядро зависнет до перезагрузки. Пусто — можно."""
