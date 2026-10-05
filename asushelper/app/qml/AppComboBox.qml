@@ -8,12 +8,13 @@ import org.kde.kirigami as Kirigami
 QQC2.ComboBox {
     id: combo
 
-    Binding { target: combo; property: "background"; value: field; when: Theme.original }
-    Binding { target: combo.popup; property: "background"; value: list; when: Theme.original }
+    Binding { target: combo; property: "background"; value: combo.field; when: Theme.original }
+    Binding { target: combo.popup; property: "background"; value: combo.list; when: Theme.original }
     Binding { target: combo.popup; property: "padding"; value: Kirigami.Units.smallSpacing; when: Theme.original }
 
-    Rectangle {
-        id: field
+    // фон — значение свойства, а не дочерний элемент: в теме KDE он ни к чему не прикреплён и не рисуется
+    // (дочерний был бы виден поверх кнопки полосой своего размера); в своих темах привязка выше делает его фоном
+    readonly property Item field: Rectangle {
         implicitWidth: Kirigami.Units.gridUnit * 6
         implicitHeight: Kirigami.Units.gridUnit * 1.8
         radius: Kirigami.Units.cornerRadius * 2
@@ -24,8 +25,7 @@ QQC2.ComboBox {
         border.color: combo.visualFocus ? Kirigami.Theme.highlightColor : Qt.alpha(Kirigami.Theme.textColor, 0.12)
     }
 
-    Item {
-        id: list
+    readonly property Item list: Item {
         RectangularShadow {
             anchors.fill: parent
             radius: Kirigami.Units.cornerRadius * 2

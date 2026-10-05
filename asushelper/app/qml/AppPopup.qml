@@ -11,7 +11,7 @@ QQC2.Popup {
 
     readonly property real cardRadius: Kirigami.Units.cornerRadius * 3
 
-    Binding { target: popup; property: "background"; value: card; when: Theme.original }
+    Binding { target: popup; property: "background"; value: popup.card; when: Theme.original }
     // палитра окна: всплывающее живёт в слое Overlay и иначе берёт палитру платформенной темы (синие
     // переключатели, бледные ползунки)
     readonly property var c: Theme.colors
@@ -36,8 +36,9 @@ QQC2.Popup {
     Binding { target: popup; property: "enter"; value: appear; when: Theme.original }
     Binding { target: popup; property: "exit"; value: disappear; when: Theme.original }
 
-    Item {
-        id: card
+    // фон — значение свойства, а не дочерний элемент: в теме KDE он ни к чему не прикреплён и не входит в
+    // содержимое окна (иначе сбивал бы его размер); в своих темах привязка выше делает его фоном
+    readonly property Item card: Item {
         RectangularShadow {
             anchors.fill: parent
             radius: popup.cardRadius

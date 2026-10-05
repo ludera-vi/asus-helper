@@ -7,10 +7,11 @@ import org.kde.kirigami as Kirigami
 QQC2.Button {
     id: button
 
-    Binding { target: button; property: "background"; value: shape; when: Theme.original }
+    Binding { target: button; property: "background"; value: button.shape; when: Theme.original }
 
-    Rectangle {
-        id: shape
+    // фон — значение свойства, а не дочерний элемент: в теме KDE он ни к чему не прикреплён и не рисуется
+    // (дочерний был бы виден поверх кнопки полосой своего размера); в своих темах привязка выше делает его фоном
+    readonly property Item shape: Rectangle {
         implicitWidth: Kirigami.Units.gridUnit * 4
         implicitHeight: Kirigami.Units.gridUnit * 1.8
         radius: Kirigami.Units.cornerRadius * 2
