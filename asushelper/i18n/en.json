@@ -428,5 +428,6 @@
  "# Asus-helper: niri только на встроенной видеокарте (см. gpu.py)\n": "# Asus-helper: niri on the integrated GPU only (see gpu.py)\n",
  "рабочий стол niri: %s": "niri desktop: %s",
  "Как в noctalia": "System (noctalia)",
- "тема noctalia: цвета обновлены (%s)": "noctalia theme: colors updated (%s)"
+ "тема noctalia: цвета обновлены (%s)": "noctalia theme: colors updated (%s)",
+ "стиль виджетов системы %s — окно рисую стилем Breeze": "system widget style is %s — drawing the window with Breeze"
 }

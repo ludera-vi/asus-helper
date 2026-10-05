@@ -18,7 +18,7 @@ from PySide6.QtCore import QMetaObject, QRectF, Qt, QUrl  # noqa: E402
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtQuickControls2 import QQuickStyle  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMenu, QStyleFactory, QSystemTrayIcon  # noqa: E402
 
 from .. import __version__  # noqa: E402
 from ..agent import Agent  # noqa: E402
@@ -231,6 +231,12 @@ def main() -> int:
     if theme != themes.SYSTEM:
         app.setStyle("Fusion")                       # и меню значка в трее — в той же теме
         app.setPalette(themes.original_palette(colors))
+    elif app.style().name().lower() != "breeze" and "breeze" in (k.lower() for k in QStyleFactory.keys()):
+        # «Как в системе» — цвета KDE, но кнопки и списки всегда стилем Breeze: стиль KDE для QML рисует их стилем
+        # виджетов системы, а сторонние (Kvantum — его, например, включают глобальные темы из магазина KDE)
+        # ломают окно: градиенты, заливки, обрезанные подписи
+        log.info(_("стиль виджетов системы %s — окно рисую стилем Breeze"), app.style().name())
+        app.setStyle("Breeze")
     log.info(_("оформление: %s (%s)"), theme, QQuickStyle.name())
     session_desktop = desktop()
     if session_desktop != "kde":
