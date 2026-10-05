@@ -217,7 +217,6 @@
  "Цвет": "Color",
  "Цвет подсветки": "Backlight color",
  "Экран": "Display",
- "Энергосбережение CPU (EPP)": "CPU energy preference (EPP)",
  "Ядро           : {0}   asus-armoury: {1}": "Kernel         : {0}   asus-armoury: {1}",
  "Ярко": "Bright",
  "авто: ": "auto: ",
@@ -323,7 +322,6 @@
  "переключателя «{0}» нет": "no \"{0}\" switch",
  "перечитаны настройки": "settings reloaded",
  "питание: %s": "power: %s",
- "по режиму": "by profile",
  "подготовка видеокарты ко сну": "preparing the GPU for sleep",
  "подсветка выключена": "backlight off",
  "подсветка клавиатуры не найдена": "keyboard backlight not found",
@@ -420,5 +418,11 @@
  "# Asus-helper: GNOME только на встроенной видеокарте (см. gpu.py)\n": "# Asus-helper: GNOME on the integrated GPU only (see gpu.py)\n",
  "рабочий стол GNOME: %s": "GNOME desktop: %s",
  "рабочий стол ({0}) запущен на NVIDIA — выключить её сейчас нельзя. Выйдите из сеанса и войдите снова: после этого он будет на встроенной видеокарте": "the desktop ({0}) runs on NVIDIA — it cannot be turned off now. Log out and back in: then the desktop uses the integrated GPU",
- "в GNOME нет трея: нужно расширение AppIndicator (gnome-shell-extension-appindicator); окно открывается из меню приложений и клавишей ROG": "GNOME has no tray: the AppIndicator extension is needed (gnome-shell-extension-appindicator); the window opens from the app menu and with the ROG key"
+ "в GNOME нет трея: нужно расширение AppIndicator (gnome-shell-extension-appindicator); окно открывается из меню приложений и клавишей ROG": "GNOME has no tray: the AppIndicator extension is needed (gnome-shell-extension-appindicator); the window opens from the app menu and with the ROG key",
+ "Приоритет процессора": "Processor priority",
+ "Энергосбережение": "Power saving",
+ "Экономичный баланс": "Efficient balance",
+ "Отзывчивый баланс": "Responsive balance",
+ "Производительность": "Performance",
+ "Как у режима: «%1»": "Profile default: \"%1\""
 }

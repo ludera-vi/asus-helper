@@ -120,16 +120,25 @@ ColumnLayout {
             }
         }
 
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
+            spacing: Kirigami.Units.smallSpacing
             visible: (page.st.epp_choices || []).length > 0     // процессор поддерживает EPP
-            QQC2.Label { text: Theme.tr("Энергосбережение CPU (EPP)"); Layout.fillWidth: true; elide: Text.ElideRight }
+            QQC2.Label { text: Theme.tr("Приоритет процессора"); Layout.fillWidth: true; elide: Text.ElideRight }
             QQC2.ComboBox {
+                // под подписью и во всю ширину: длинное «Как у режима: …» не раздвигает окно
                 id: epp
+                Layout.fillWidth: true
                 readonly property var choices: ["", ...(page.st.epp_choices || []).filter(c => c !== "default")]
-                model: choices.map(c => c === "" ? Theme.tr("по режиму") : c)
+                readonly property string modeValue: Theme.eppDefaults[page.profile] || ""
+                model: choices.map(c => c === "" ? Theme.tr("Как у режима: «%1»").arg(Theme.eppName(modeValue))
+                                               : Theme.eppName(c))
                 currentIndex: Math.max(0, choices.indexOf(page.pcfg.epp || ""))
                 onActivated: i => backend.setEpp(page.profile, choices[i])
+                // значение, которое уходит в ядро, — для тех, кто знает EPP, и для отчётов об ошибках
+                QQC2.ToolTip.visible: hovered
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                QQC2.ToolTip.text: "EPP: " + (choices[currentIndex] || modeValue)
             }
         }
 

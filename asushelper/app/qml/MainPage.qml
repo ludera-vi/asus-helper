@@ -377,9 +377,11 @@ ColumnLayout {
             onToggled: backend.setToggle("boot_sound", checked)
         }
         Item { Layout.fillWidth: true }
-        // оформление: как в системе (KDE) или оригинальное — окно перезапустится в выбранном
+        // оформление: как в системе (KDE) или оригинальное — окно перезапустится в выбранном. Выбор есть только
+        // в KDE со стилем KDE; в GNOME и других средах окно всегда в оригинальной теме — кнопка не нужна
         QQC2.ToolButton {
             id: themeButton
+            visible: backend.kdeStyle
             icon.name: "color-management"
             display: QQC2.AbstractButton.IconOnly
             text: Theme.tr("Оформление")
@@ -410,15 +412,28 @@ ColumnLayout {
         Repeater {
             model: ["ru", "en"]
             QQC2.ToolButton {
+                // выбранный язык выделен и не нажимается; другой — переключает (программа перезапустится)
                 required property string modelData
+                readonly property bool current: backend.language === modelData
                 text: modelData.toUpperCase()
+                // переключаемая — так выбранную рисует выделенной любая тема (Breeze, Fusion)
                 checkable: true
-                checked: backend.language === modelData
-                font: Theme.smallFont
-                onClicked: if (backend.language !== modelData) backend.setLanguage(modelData)
-                QQC2.ToolTip.visible: hovered
+                checked: current
+                focusPolicy: current ? Qt.NoFocus : Qt.StrongFocus
+                font.pointSize: Theme.smallFont.pointSize
+                font.weight: current ? Font.DemiBold : Font.Normal
+                opacity: current ? 1 : 0.7
+                onClicked: if (!current) backend.setLanguage(modelData)
+                QQC2.ToolTip.visible: hovered && !current
                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
                 QQC2.ToolTip.text: modelData === "ru" ? "Русский" : "English"
+                // выбранный язык не нажимается: клики и наведение забирает этот слой, выделение не снимается
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: parent.current
+                    hoverEnabled: true
+                    acceptedButtons: Qt.AllButtons
+                }
             }
         }
         QQC2.Label {

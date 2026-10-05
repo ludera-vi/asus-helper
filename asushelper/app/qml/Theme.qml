@@ -56,6 +56,20 @@ Item {
         return p ? p.icon : "speedometer-symbolic"
     }
 
+    // Приоритет процессора (EPP): человеческие имена значений ядра. Сами значения ядра («power» — это
+    // «экономия энергии», а не «мощность») показываются только в подсказке.
+    function eppName(v) {
+        switch (v) {
+        case "power": return tr("Энергосбережение")
+        case "balance_power": return tr("Экономичный баланс")
+        case "balance_performance": return tr("Отзывчивый баланс")
+        case "performance": return tr("Производительность")
+        default: return v
+        }
+    }
+    // «Как у режима»: что режим ставит сам — как DEFAULT_EPP в daemon/config.py
+    readonly property var eppDefaults: ({ quiet: "power", balanced: "balance_power", performance: "performance" })
+
     function gpuInfo(gpu, nv) {
         if (!gpu || !gpu.state) return ""
         const d = gpu.dgpu_name || "NVIDIA"
