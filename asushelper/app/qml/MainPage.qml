@@ -367,47 +367,40 @@ ColumnLayout {
         }
     }
 
-    // ---------- низ ----------
+    // ---------- низ: оформление, язык, версия — справа ----------
     RowLayout {
         Layout.fillWidth: true
-        QQC2.Switch {
-            visible: page.toggles.boot_sound !== undefined
-            text: Theme.tr("Звук при включении")
-            checked: !!page.toggles.boot_sound
-            onToggled: backend.setToggle("boot_sound", checked)
-        }
         Item { Layout.fillWidth: true }
-        // оформление: как в системе (KDE) или оригинальное — окно перезапустится в выбранном. Выбор есть только
-        // в KDE со стилем KDE; в GNOME и других средах окно всегда в оригинальной теме — кнопка не нужна
-        QQC2.ToolButton {
-            id: themeButton
-            visible: backend.kdeStyle
-            icon.name: "color-management"
-            display: QQC2.AbstractButton.IconOnly
-            text: Theme.tr("Оформление")
-            onClicked: themeMenu.open()
-            QQC2.ToolTip.visible: hovered && !themeMenu.visible
-            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-            QQC2.ToolTip.text: Theme.tr("Оформление: %1").arg(backend.theme === "original" ? Theme.tr("оригинальное") : Theme.tr("как в системе"))
-            QQC2.Menu {
-                id: themeMenu
-                y: -height
-                QQC2.MenuItem {
-                    text: Theme.tr("Как в системе (KDE)")
-                    checkable: true
-                    checked: backend.themeWanted === "system"
-                    // стиля KDE нет (не Plasma или не установлен qqc2-desktop-style) — выбрать нельзя
-                    enabled: backend.kdeStyle
-                    onTriggered: backend.setTheme("system")
-                }
-                QQC2.MenuItem {
-                    text: Theme.tr("Оригинальное (тёмное)")
-                    checkable: true
-                    checked: backend.themeWanted === "original"
-                    onTriggered: backend.setTheme("original")
+        // оформление: как в системе (KDE) или оригинальное — как язык: выбранное в рамке и не нажимается, другое
+        // переключает (окно перезапустится). Выбор есть только в KDE со стилем KDE; в GNOME и других средах
+        // окно всегда в оригинальной теме — кнопок нет
+        Repeater {
+            model: backend.kdeStyle ? [{ id: "system", name: Theme.tr("Система"), hint: Theme.tr("Как в системе (KDE)") },
+                                       { id: "original", name: Theme.tr("Оригинал"), hint: Theme.tr("Оригинальное (тёмное)") }]
+                                    : []
+            QQC2.ToolButton {
+                required property var modelData
+                readonly property bool current: backend.themeWanted === modelData.id
+                text: modelData.name
+                checkable: true
+                checked: current
+                focusPolicy: current ? Qt.NoFocus : Qt.StrongFocus
+                font.pointSize: Theme.smallFont.pointSize
+                font.weight: current ? Font.DemiBold : Font.Normal
+                opacity: current ? 1 : 0.7
+                onClicked: if (!current) backend.setTheme(modelData.id)
+                QQC2.ToolTip.visible: hovered && !current
+                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                QQC2.ToolTip.text: Theme.tr("Оформление: %1").arg(modelData.hint) + Theme.tr(" — окно перезапустится")
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: parent.current
+                    hoverEnabled: true
+                    acceptedButtons: Qt.AllButtons
                 }
             }
         }
+        Item { implicitWidth: Kirigami.Units.smallSpacing }   // зазор между оформлением и языком
         // язык: RU / EN — программа перезапустится на выбранном
         Repeater {
             model: ["ru", "en"]

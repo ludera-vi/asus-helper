@@ -130,7 +130,6 @@
  "Заряд батареи": "Battery level",
  "Заряд за сутки": "Charge over 24 hours",
  "Заряжать до": "Charge up to",
- "Звук при включении": "Boot sound",
  "Здоровье батареи": "Battery health",
  "Зуммер": "Buzzer",
  "Используют: ": "In use by: ",
@@ -377,10 +376,7 @@
  "подсветка клавиатуры: погашена — %d с без нажатий": "keyboard backlight: off — %d s without input",
  "Мощность и процессор": "Power and CPU",
  "лимиты мощности, Turbo Boost, энергосбережение": "power limits, Turbo Boost, power saving",
- "Оформление": "Appearance",
  "Оформление: %1": "Appearance: %1",
- "оригинальное": "original",
- "как в системе": "system",
  "Как в системе (KDE)": "System (KDE)",
  "Оригинальное (тёмное)": "Original (dark)",
  "оформление: %s (%s)": "appearance: %s (%s)",
@@ -424,5 +420,8 @@
  "Экономичный баланс": "Efficient balance",
  "Отзывчивый баланс": "Responsive balance",
  "Производительность": "Performance",
- "Как у режима: «%1»": "Profile default: \"%1\""
+ "Как у режима: «%1»": "Profile default: \"%1\"",
+ "Система": "System",
+ "Оригинал": "Original",
+ " — окно перезапустится": " — the window restarts"
 }

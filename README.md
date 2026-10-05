@@ -30,7 +30,7 @@ no need to install them separately.
 | **Lid (Slash)** | brightness, 15 animations, static light, battery level; whether to light up on battery and with the lid closed |
 | **Battery** | charge limit (e.g. 80 % for a long battery life), charts of temperature, fans and drain, charge over 24 h, battery health by day |
 | **Appearance** | in KDE — *system* (KDE colors and style) or *original* — our own dark theme in the spirit of G-Helper; in GNOME and other desktops — original |
-| **Little things** | the ROG key above the keyboard opens the window, boot sound; tray icon: color — profile, purple dot — NVIDIA is working |
+| **Little things** | the ROG key above the keyboard opens the window; tray icon: color — profile, purple dot — NVIDIA is working |
 
 **No model lists.** Asus-helper finds out what your particular laptop can do (from the kernel and its
 devices) and shows only that — no useless buttons. Tested on **ROG Zephyrus G16 GU605MZ** (Core Ultra 9 +
@@ -85,7 +85,7 @@ An AUR package is ready (`packaging/aur/PKGBUILD`) and will be published once AU
 - **The ROG key** above the keyboard opens the window. No such key? Assign any:
   KDE — *System Settings → Shortcuts → "Open Asus-helper"*,
   GNOME — *Settings → Keyboard → Custom Shortcuts → "Open Asus-helper"*.
-- **Language** — the RU / EN switch at the bottom of the window. **Appearance** (KDE) — the button next to it.
+- **Language** — the RU / EN switch at the bottom of the window. **Appearance** (KDE) — next to it: "System" or "Original".
 - **Games on NVIDIA**: in Standard programs use NVIDIA by themselves; for old OpenGL games —
   `prime-run program` (in Steam: launch options `prime-run %command%`).
 - **Terminal**: `asus-helper-cli` — status, `asus-helper-cli --help` — all commands.
